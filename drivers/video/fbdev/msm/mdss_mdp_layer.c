@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, 2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -991,9 +991,8 @@ static int __validate_layer_reconfig(struct mdp_input_layer *layer,
 	 * Invalidate any reconfig of CSC block on staged pipe.
 	 */
 	if (!is_csc_db &&
-		((!!pipe->src_fmt->is_yuv != !!layer_src_fmt->is_yuv) ||
 		(pipe->src_fmt->is_yuv && layer_src_fmt->is_yuv &&
-		pipe->csc_coeff_set != layer->color_space))) {
+		pipe->csc_coeff_set != layer->color_space)) {
 		pr_err("CSC reconfig not allowed on staged pipe\n");
 		status = -EINVAL;
 		goto err_exit;
@@ -2446,7 +2445,7 @@ static int __validate_layers(struct msm_fb_data_type *mfd,
 
 	struct mdss_mdp_mixer *mixer = NULL;
 	struct mdp_input_layer *layer = NULL, *layer_list;
-	struct mdss_mdp_validate_info_t *validate_info_list = NULL;
+	struct mdss_mdp_validate_info_t validate_info_list[MAX_LAYER_COUNT];
 	bool is_single_layer = false, force_validate;
 	enum layer_pipe_q pipe_q_type;
 	enum layer_zorder_used zorder_used[MDSS_MDP_MAX_STAGE] = {0};
@@ -2462,13 +2461,8 @@ static int __validate_layers(struct msm_fb_data_type *mfd,
 		goto validate_skip;
 
 	layer_list = commit->input_layers;
-
-	validate_info_list = kcalloc(layer_count, sizeof(*validate_info_list),
-				     GFP_KERNEL);
-	if (!validate_info_list) {
-		ret = -ENOMEM;
-		goto end;
-	}
+	memset(validate_info_list, 0,
+	       sizeof(*validate_info_list) * layer_count);
 
 	for (i = 0; i < layer_count; i++) {
 		if (layer_list[i].dst_rect.x >= left_lm_w)
@@ -2759,7 +2753,6 @@ validate_exit:
 	}
 	mutex_unlock(&mdp5_data->list_lock);
 end:
-	kfree(validate_info_list);
 	mutex_unlock(&mdp5_data->ov_lock);
 
 	pr_debug("fb%d validated layers =%d\n", mfd->index, i);
@@ -2795,6 +2788,7 @@ int __is_cwb_requested(uint32_t commit_flags)
 int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 	struct file *file, struct mdp_layer_commit_v1 *commit)
 {
+	struct mdss_mdp_validate_info_t validate_info_list[MAX_LAYER_COUNT];
 	int ret, i;
 	int layer_count = commit->input_layer_cnt;
 	bool validate_failed = false;
@@ -2803,7 +2797,6 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 	struct mdp_input_layer *layer_list;
 	struct mdss_overlay_private *mdp5_data;
 	struct mdss_mdp_data *src_data[MDSS_MDP_MAX_SSPP];
-	struct mdss_mdp_validate_info_t *validate_info_list;
 	struct mdss_mdp_ctl *sctl = NULL;
 
 	mdp5_data = mfd_to_mdp5_data(mfd);
@@ -2844,10 +2837,8 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 		return 0;
 	}
 
-	validate_info_list = kcalloc(layer_count, sizeof(*validate_info_list),
-				     GFP_KERNEL);
-	if (!validate_info_list)
-		return -ENOMEM;
+	memset(validate_info_list, 0,
+	       sizeof(*validate_info_list) * layer_count);
 
 	for (i = 0; i < layer_count; i++) {
 		if (!validate_info_list[i].layer) {
@@ -2857,7 +2848,7 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 			if (IS_ERR_VALUE(ret)) {
 				pr_err("error updating multirect config. ret=%d i=%d\n",
 					ret, i);
-				goto end;
+				return ret;
 			}
 		}
 	}
@@ -2875,7 +2866,7 @@ int mdss_mdp_layer_pre_commit(struct msm_fb_data_type *mfd,
 		ret = __validate_layers(mfd, file, commit);
 		if (ret) {
 			pr_err("__validate_layers failed. rc=%d\n", ret);
-			goto end;
+			return ret;
 		}
 	} else {
 		/*
@@ -2945,8 +2936,6 @@ map_err:
 				mdss_mdp_overlay_buf_free(mfd, src_data[i]);
 		mutex_unlock(&mdp5_data->list_lock);
 	}
-end:
-	kfree(validate_info_list);
 
 	return ret;
 }

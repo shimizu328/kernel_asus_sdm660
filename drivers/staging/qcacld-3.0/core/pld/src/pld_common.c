@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2016-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2016-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 #define pr_fmt(fmt) "wlan_pld:%s:%d:: " fmt, __func__, __LINE__
@@ -662,6 +653,7 @@ void pld_device_self_recovery(struct device *dev)
 	case PLD_BUS_TYPE_SNOC:
 		break;
 	case PLD_BUS_TYPE_SDIO:
+		pld_sdio_device_self_recovery(dev);
 		break;
 	default:
 		pr_err("Invalid device type\n");
@@ -1313,7 +1305,7 @@ void *pld_smmu_get_mapping(struct device *dev)
 		ptr = pld_snoc_smmu_get_mapping(dev);
 		break;
 	case PLD_BUS_TYPE_PCIE:
-		pr_err("Not supported on type %d\n", type);
+		ptr = pld_pcie_smmu_get_mapping();
 		break;
 	default:
 		pr_err("Invalid device type %d\n", type);
@@ -1344,8 +1336,7 @@ int pld_smmu_map(struct device *dev, phys_addr_t paddr,
 		ret = pld_snoc_smmu_map(dev, paddr, iova_addr, size);
 		break;
 	case PLD_BUS_TYPE_PCIE:
-		pr_err("Not supported on type %d\n", type);
-		ret = -ENODEV;
+		ret = pld_pcie_smmu_map(paddr, iova_addr, size);
 		break;
 	default:
 		pr_err("Invalid device type %d\n", type);
@@ -1414,6 +1405,23 @@ int pld_is_qmi_disable(struct device *dev)
 }
 
 /**
+ * pld_is_fw_down() - Check WLAN fw is down or not
+ *
+ * This is a SNOC specific API. This API will be called
+ * to check if WLAN FW is down or not. dev is not passed
+ * in this API as it could be called during driver unloading
+ * when all the information driver stored will be gone.
+ *
+ *  Return: 1 FW is down
+ *          0 FW is not down
+ *          Non zero failure code for errors
+ */
+int pld_is_fw_down(void)
+{
+	return pld_snoc_is_fw_down();
+}
+
+/**
  * pld_force_assert_target() - Send a force assert to FW.
  * This can use various sideband requests available at platform to
  * initiate a FW assert.
@@ -1466,6 +1474,11 @@ bool pld_is_fw_dump_skipped(struct device *dev)
 		break;
 	}
 	return ret;
+}
+
+int pld_is_fw_rejuvenate(void)
+{
+	return pld_snoc_is_fw_rejuvenate();
 }
 
 #ifdef CONFIG_CNSS_UTILS
@@ -1537,5 +1550,66 @@ void pld_set_cc_source(struct device *dev,
 enum pld_cc_src pld_get_cc_source(struct device *dev)
 {
 	return PLD_SOURCE_CORE;
+}
+#endif
+/**
+ * pld_block_shutdown() - Block/Unblock modem shutdown
+ * @dev: device
+ * @status: status true or false
+ *
+ * This API will be called to Block/Unblock modem shutdown.
+ * True - Block shutdown
+ * False - Unblock shutdown
+ *
+ * Return: None
+ */
+void pld_block_shutdown(struct device *dev, bool status)
+{
+	enum pld_bus_type type = pld_get_bus_type(dev);
+
+	switch (type) {
+	case PLD_BUS_TYPE_SNOC:
+		pld_snoc_block_shutdown(status);
+		break;
+	default:
+		break;
+	}
+}
+
+#if defined(CONFIG_PLD_SNOC_ICNSS) && defined(CONFIG_WLAN_FW_THERMAL_MITIGATION)
+int pld_thermal_register(struct device *dev, int max_state)
+{
+	return icnss_thermal_register(dev, max_state);
+}
+
+void pld_thermal_unregister(struct device *dev)
+{
+	icnss_thermal_unregister(dev);
+}
+
+int pld_get_thermal_state(struct device *dev, uint16_t *thermal_state)
+{
+	int ret;
+	unsigned long thermal_state_t;
+
+	ret = icnss_get_curr_therm_state(dev, &thermal_state_t);
+	*thermal_state = (uint16_t)thermal_state_t;
+
+	return ret;
+}
+
+#else
+int pld_thermal_register(struct device *dev, int max_state)
+{
+	return -ENOTSUPP;
+}
+
+void pld_thermal_unregister(struct device *dev)
+{
+}
+
+int pld_get_thermal_state(struct device *dev, uint16_t *thermal_state)
+{
+	return -ENOTSUPP;
 }
 #endif

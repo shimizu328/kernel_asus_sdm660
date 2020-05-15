@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,17 +26,20 @@
 #include "mdss_dsi.h"
 #include "mdss_dba_utils.h"
 #include "mdss_debug.h"
-/* Huaqin modify for Modification sequence by qimaokang at 2018/05/31 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 #include "mdss_panel.h"
-/* Huaqin modify for Modification sequence by qimaokang at 2018/05/31 end */
+#endif
 
 #define DT_CMD_HDR 6
+#define MIN_REFRESH_RATE 48
 #define DEFAULT_MDP_TRANSFER_TIME 14000
 
 #define VSYNC_DELAY msecs_to_jiffies(17)
-/* Huaqin modify for Modification sequence by qimaokang at 2018/05/31 start */
+
+#ifdef CONFIG_MACH_ASUS_X00T
 extern char mdss_mdp_panel[MDSS_MAX_PANEL_LEN];
-/* Huaqin modify for Modification sequence by qimaokang at 2018/05/31 end */
+#endif
+
 DEFINE_LED_TRIGGER(bl_led_trigger);
 
 void mdss_dsi_panel_pwm_cfg(struct mdss_dsi_ctrl_pdata *ctrl)
@@ -185,11 +188,9 @@ static void mdss_dsi_panel_apply_settings(struct mdss_dsi_ctrl_pdata *ctrl,
 	mdss_dsi_cmdlist_put(ctrl, &cmdreq);
 }
 
-/* Huaqin modify for ZQL1650 by xieguoqiang at 2018/02/09 start */
-//static
-void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
+
+static void mdss_dsi_panel_cmds_send(struct mdss_dsi_ctrl_pdata *ctrl,
 			struct dsi_panel_cmds *pcmds, u32 flags)
-/* Huaqin modify for ZQL1650 by xieguoqiang at 2018/02/09 end */
 {
 	struct dcs_cmd_req cmdreq;
 	struct mdss_panel_info *pinfo;
@@ -378,9 +379,10 @@ free:
 ret:
 	return rc;
 }
-/* Huaqin modify for ZQL1650-1523 by zhangxiude at 2018/07/18 start */
+
+#if defined(CONFIG_MACH_ASUS_X00T) && defined(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_v27)
 extern long syna_gesture_mode;
-/* Huaqin modify for ZQL1650-1523 by zhangxiude at 2018/07/18 end */
+#endif
 int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl_pdata = NULL;
@@ -505,25 +507,16 @@ int mdss_dsi_panel_reset(struct mdss_panel_data *pdata, int enable)
 			gpio_set_value((ctrl_pdata->disp_en_gpio), 0);
 			gpio_free(ctrl_pdata->disp_en_gpio);
 		}
-		/* Huaqin modify for Modification sequence by qimaokang at 2018/05/31 start */
-		printk("qimk panel name:%s\n",mdss_mdp_panel);
-		if(strstr(mdss_mdp_panel,"qcom,mdss_dsi_td4310_1080p_video_txd"))
-		{
-/* Huaqin modify for ZQL1650-1523 by zhangxiude at 2018/07/18 start */
-			if(syna_gesture_mode == 0)
-			{
-			    gpio_set_value((ctrl_pdata->rst_gpio), 0);
-			}
-			else
-			{
-			    gpio_set_value((ctrl_pdata->rst_gpio), 1);
-			}
-/* Huaqin modify for ZQL1650-1523 by zhangxiude at 2018/07/18 end */
-		}else
-		{
+#if defined(CONFIG_MACH_ASUS_X00T) && defined(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_v27)
+		if (strstr(mdss_mdp_panel,
+			"qcom,mdss_dsi_td4310_1080p_video_txd") &&
+			syna_gesture_mode == 0)
+#endif
+		gpio_set_value((ctrl_pdata->rst_gpio), 0);
+#if defined(CONFIG_MACH_ASUS_X00T) && defined(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_v27)
+		else
 			gpio_set_value((ctrl_pdata->rst_gpio), 1);
-		}
-		/* Huaqin modify for Modification sequence by qimaokang at 2018/05/31 end */
+#endif
 		gpio_free(ctrl_pdata->rst_gpio);
 		if (gpio_is_valid(ctrl_pdata->lcd_mode_sel_gpio)) {
 			gpio_set_value(ctrl_pdata->lcd_mode_sel_gpio, 0);
@@ -1830,23 +1823,16 @@ static bool mdss_dsi_cmp_panel_reg_v2(struct mdss_dsi_ctrl_pdata *ctrl)
 	for (i = 0; i < ctrl->status_cmds.cmd_cnt; i++)
 		len += lenp[i];
 
-	for (i = 0; i < len; i++) {
-		pr_debug("[%i] return:0x%x status:0x%x\n",
-			i, (unsigned int)ctrl->return_buf[i],
-			(unsigned int)ctrl->status_value[j + i]);
-		MDSS_XLOG(ctrl->ndx, ctrl->return_buf[i],
-			ctrl->status_value[j + i]);
-		j += len;
-	}
-
 	for (j = 0; j < ctrl->groups; ++j) {
 		for (i = 0; i < len; ++i) {
-/* Huaqin modify for ZQL1650 by xieguoqiang at 2018/02/09 start */
+			pr_debug("[%i] return:0x%x status:0x%x\n",
+				i, ctrl->return_buf[i],
+				(unsigned int)ctrl->status_value[group + i]);
+			MDSS_XLOG(ctrl->ndx, ctrl->return_buf[i],
+					ctrl->status_value[group + i]);
 			if (ctrl->return_buf[i] !=
-				ctrl->status_value[group + i]){
-/* Huaqin modify for ZQL1650 by xieguoqiang at 2018/02/09 end */
+				ctrl->status_value[group + i])
 				break;
-			}
 		}
 
 		if (i == len)
@@ -2063,14 +2049,8 @@ static void mdss_dsi_parse_esd_params(struct device_node *np,
 	pinfo->esd_check_enabled = of_property_read_bool(np,
 		"qcom,esd-check-enabled");
 
-	/* Huaqin modify to disable ESD in factory version by xieguoqiang 20170201 start */
-//#ifdef HQ_BUILD_FACTORY
-//	return;
-//#else
 	if (!pinfo->esd_check_enabled)
 		return;
-//#endif
-	/* Huaqin modify to disable ESD in factory version by xieguoqiang 20170201 end */
 
 	ctrl->status_mode = ESD_MAX;
 	rc = of_property_read_string(np,
@@ -2331,7 +2311,7 @@ static int mdss_dsi_set_refresh_rate_range(struct device_node *pan_node,
 		 * If min refresh rate is not specified, set it to the
 		 * default panel refresh rate.
 		 */
-		pinfo->min_fps = pinfo->mipi.frame_rate;
+		pinfo->min_fps = MIN_REFRESH_RATE;
 		rc = 0;
 	}
 
@@ -2360,14 +2340,15 @@ static void mdss_dsi_parse_dfps_config(struct device_node *pan_node,
 			struct mdss_dsi_ctrl_pdata *ctrl_pdata)
 {
 	const char *data;
-	bool dynamic_fps;
+	bool dynamic_fps, dynamic_bitclk;
 	struct mdss_panel_info *pinfo = &(ctrl_pdata->panel_data.panel_info);
+	int rc = 0;
 
 	dynamic_fps = of_property_read_bool(pan_node,
 			"qcom,mdss-dsi-pan-enable-dynamic-fps");
 
 	if (!dynamic_fps)
-		return;
+		goto dynamic_bitclk;
 
 	pinfo->dynamic_fps = true;
 	data = of_get_property(pan_node, "qcom,mdss-dsi-pan-fps-update", NULL);
@@ -2397,6 +2378,31 @@ static void mdss_dsi_parse_dfps_config(struct device_node *pan_node,
 	pinfo->new_fps = pinfo->mipi.frame_rate;
 	pinfo->current_fps = pinfo->mipi.frame_rate;
 
+dynamic_bitclk:
+	dynamic_bitclk = of_property_read_bool(pan_node,
+			"qcom,mdss-dsi-pan-enable-dynamic-bitclk");
+	if (!dynamic_bitclk)
+		return;
+
+	of_find_property(pan_node, "qcom,mdss-dsi-dynamic-bitclk_freq",
+		&pinfo->supp_bitclk_len);
+	pinfo->supp_bitclk_len = pinfo->supp_bitclk_len/sizeof(u32);
+	if (pinfo->supp_bitclk_len < 1)
+		return;
+
+	pinfo->supp_bitclks = kzalloc((sizeof(u32) * pinfo->supp_bitclk_len),
+		GFP_KERNEL);
+	if (!pinfo->supp_bitclks)
+		return;
+
+	rc = of_property_read_u32_array(pan_node,
+		"qcom,mdss-dsi-dynamic-bitclk_freq", pinfo->supp_bitclks,
+		pinfo->supp_bitclk_len);
+	if (rc) {
+		pr_err("Error from dynamic bitclk freq u64 array read\n");
+		return;
+	}
+	pinfo->dynamic_bitclk = true;
 	return;
 }
 
@@ -2951,10 +2957,7 @@ static int mdss_panel_parse_dt(struct device_node *np,
 
 	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->off_cmds,
 		"qcom,mdss-dsi-off-command", "qcom,mdss-dsi-off-command-state");
-/* Huaqin modify for ZQL1650 by xieguoqiang at 2018/02/09 start */
-	mdss_dsi_parse_dcs_cmds(np, &ctrl_pdata->esd_recover_cmds,
-		"qcom,mdss-dsi-esd-recover-command", "qcom,mdss-dsi-esd-recover-command-state");
-/* Huaqin modify for ZQL1650 by xieguoqiang at 2018/02/09 end */
+
 	rc = of_property_read_u32(np, "qcom,adjust-timer-wakeup-ms", &tmp);
 	pinfo->adjust_timer_delay_ms = (!rc ? tmp : 0);
 

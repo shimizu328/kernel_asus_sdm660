@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2014-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2014-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -19,22 +16,16 @@
  * PERFORMANCE OF THIS SOFTWARE.
  */
 
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
- */
-
 /******************************************************************************
 * wlan_logging_sock_svc.c
 *
 ******************************************************************************/
 
 #ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
-#include <vmalloc.h>
+#include <linux/vmalloc.h>
 #include <cds_api.h>
 #include <wlan_logging_sock_svc.h>
-#include <kthread.h>
+#include <linux/kthread.h>
 #include <qdf_time.h>
 #include <wlan_ptt_sock_svc.h>
 #include <host_diag_core_event.h>
@@ -56,6 +47,7 @@
 	((QDF_TRACE_LEVEL_FATAL == (level)) || \
 	 (QDF_TRACE_LEVEL_ERROR == (level)) || \
 	 (QDF_TRACE_LEVEL_WARN == (level)) || \
+	 (QDF_TRACE_LEVEL_NONE == (level)) || \
 	 (QDF_TRACE_LEVEL_INFO == (level)))
 
 /**
@@ -239,6 +231,7 @@ static int wlan_queue_logmsg_for_app(void)
 {
 	char *ptr;
 	int ret = 0;
+
 	ptr = &gwlan_logging.pcur_node->logbuf[sizeof(tAniHdr)];
 	ptr[gwlan_logging.pcur_node->filled_length] = '\0';
 
@@ -749,18 +742,15 @@ static void send_flush_completion_to_user(uint8_t ring_id)
 
 	/* Error on purpose, so that it will get logged in the kmsg */
 	LOGGING_TRACE(QDF_TRACE_LEVEL_DEBUG,
-		      "%s: Sending flush done to userspace, recovery: %d",
-		      __func__, recovery_needed);
+		      "%s: Sending flush done to userspace reson_code %d, recovery: %d",
+		      __func__, reason_code, recovery_needed);
 
 	wlan_report_log_completion(is_fatal, indicator, reason_code, ring_id);
 
 	if (!recovery_needed)
 		return;
 
-	if (cds_is_self_recovery_enabled())
-		cds_trigger_recovery(CDS_REASON_UNSPECIFIED);
-	else
-		QDF_BUG(0);
+	cds_trigger_recovery(CDS_REASON_UNSPECIFIED);
 }
 
 /**
@@ -1160,7 +1150,7 @@ void wlan_pkt_stats_to_logger_thread(void *pl_hdr, void *pkt_dump, void *data)
 
 	spin_lock_irqsave(&gwlan_logging.pkt_stats_lock, flags);
 
-	if (!gwlan_logging.pkt_stats_pcur_node || (NULL == pkt_stats_dump)) {
+	if (!gwlan_logging.pkt_stats_pcur_node) {
 		spin_unlock_irqrestore(&gwlan_logging.pkt_stats_lock, flags);
 		return;
 	}
@@ -1193,7 +1183,7 @@ void wlan_pkt_stats_to_logger_thread(void *pl_hdr, void *pkt_dump, void *data)
 				pktlog_hdr->size),
 				data, pktlog_hdr->size);
 
-	if (pkt_stats_dump->type == STOP_MONITOR) {
+	if (pkt_stats_dump && pkt_stats_dump->type == STOP_MONITOR) {
 		wake_up_thread = true;
 		wlan_get_pkt_stats_free_node();
 	}

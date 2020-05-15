@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2011-2018 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2011-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*
@@ -145,14 +136,20 @@ QDF_STATUS csr_neighbor_roam_update_fast_roaming_enabled(tpAniSirGlobal mac_ctx,
 
 	switch (neighbor_roam_info->neighborRoamState) {
 	case eCSR_NEIGHBOR_ROAM_STATE_CONNECTED:
-		if (fast_roam_enabled) {
-			csr_roam_offload_scan(mac_ctx, session_id,
-					      ROAM_SCAN_OFFLOAD_START,
-					      REASON_CONNECT);
+		qdf_status = sme_acquire_global_lock(&mac_ctx->sme);
+		if (QDF_IS_STATUS_SUCCESS(qdf_status)) {
+			if (fast_roam_enabled) {
+				csr_roam_offload_scan(mac_ctx, session_id,
+						ROAM_SCAN_OFFLOAD_START,
+						REASON_CONNECT);
+			} else {
+				csr_roam_offload_scan(mac_ctx, session_id,
+					ROAM_SCAN_OFFLOAD_STOP,
+					REASON_SUPPLICANT_DISABLED_ROAMING);
+			}
+			sme_release_global_lock(&mac_ctx->sme);
 		} else {
-			csr_roam_offload_scan(mac_ctx, session_id,
-					      ROAM_SCAN_OFFLOAD_STOP,
-					      REASON_DISCONNECTED);
+			sme_err("Failed to acquire SME lock");
 		}
 	break;
 	case eCSR_NEIGHBOR_ROAM_STATE_INIT:
@@ -400,6 +397,8 @@ csr_neighbor_roam_prepare_scan_profile_filter(tpAniSirGlobal pMac,
 				pScanFilter->SSIDs.numOfSSIDs);
 		if (NULL == pScanFilter->SSIDs.SSIDList) {
 			sme_err("Scan Filter SSID mem alloc failed");
+			qdf_mem_free(pScanFilter->BSSIDs.bssid);
+			pScanFilter->BSSIDs.bssid = NULL;
 			return QDF_STATUS_E_NOMEM;
 		}
 		for (i = 0; i < roam_params->num_ssid_allowed_list; i++) {
@@ -419,6 +418,8 @@ csr_neighbor_roam_prepare_scan_profile_filter(tpAniSirGlobal pMac,
 			qdf_mem_malloc(sizeof(tCsrSSIDInfo));
 		if (NULL == pScanFilter->SSIDs.SSIDList) {
 			sme_err("Scan Filter SSID mem alloc failed");
+			qdf_mem_free(pScanFilter->BSSIDs.bssid);
+			pScanFilter->BSSIDs.bssid = NULL;
 			return QDF_STATUS_E_NOMEM;
 		}
 		pScanFilter->SSIDs.SSIDList->handoffPermitted = 1;
@@ -459,6 +460,8 @@ csr_neighbor_roam_prepare_scan_profile_filter(tpAniSirGlobal pMac,
 			qdf_mem_malloc(num_ch * sizeof(uint8_t));
 		if (NULL == pScanFilter->ChannelInfo.ChannelList) {
 			sme_err("Scan Filter Ch list mem alloc failed");
+			qdf_mem_free(pScanFilter->BSSIDs.bssid);
+			pScanFilter->BSSIDs.bssid = NULL;
 			qdf_mem_free(pScanFilter->SSIDs.SSIDList);
 			pScanFilter->SSIDs.SSIDList = NULL;
 			return QDF_STATUS_E_NOMEM;
@@ -949,6 +952,7 @@ static void csr_neighbor_roam_info_ctx_init(
 	tpCsrNeighborRoamControlInfo ngbr_roam_info =
 		&pMac->roam.neighborRoamInfo[session_id];
 	tCsrRoamSession *session = &pMac->roam.roamSession[session_id];
+	struct tagCsrRoamProfile *roam_profile = session->pCurRoamProfile;
 
 	int init_ft_flag = false;
 
@@ -988,7 +992,7 @@ static void csr_neighbor_roam_info_ctx_init(
 
 	/* Based on the auth scheme tell if we are 11r */
 	if (csr_is_auth_type11r
-		(session->connectedProfile.AuthType,
+		(pMac, session->connectedProfile.AuthType,
 		session->connectedProfile.MDID.mdiePresent)) {
 		if (pMac->roam.configParam.isFastTransitionEnabled)
 			init_ft_flag = true;
@@ -1010,14 +1014,16 @@ static void csr_neighbor_roam_info_ctx_init(
 			FL("isESEAssoc is = %d ft = %d"),
 			ngbr_roam_info->isESEAssoc, init_ft_flag);
 #endif
-	/* If "Legacy Fast Roaming" is enabled */
+	/* If "FastRoamEnabled" ini is enabled */
 	if (csr_roam_is_fast_roam_enabled(pMac, session_id))
 		init_ft_flag = true;
-	if (init_ft_flag == false)
-		return;
-	/* Initialize all the data structures needed for the 11r FT Preauth */
-	ngbr_roam_info->FTRoamInfo.currentNeighborRptRetryNum = 0;
-	csr_neighbor_roam_purge_preauth_failed_list(pMac);
+
+	if (init_ft_flag) {
+		/* Initialize all the data needed for the 11r FT Preauth */
+		ngbr_roam_info->FTRoamInfo.currentNeighborRptRetryNum = 0;
+		csr_neighbor_roam_purge_preauth_failed_list(pMac);
+	}
+
 	if (csr_roam_is_roam_offload_scan_enabled(pMac)) {
 		/*
 		 * If this is not a INFRA type BSS, then do not send the command
@@ -1042,20 +1048,19 @@ static void csr_neighbor_roam_info_ctx_init(
 			}
 		} else
 #endif
-
+		{
 			csr_roam_offload_scan(pMac, session_id,
 				ROAM_SCAN_OFFLOAD_START,
 				REASON_CTX_INIT);
 
-			if (session->pCurRoamProfile &&
-				 session->pCurRoamProfile->do_not_roam) {
+			if (roam_profile &&
+				roam_profile->supplicant_disabled_roaming) {
 				sme_debug("Supplicant disabled driver roaming");
-
 				csr_roam_offload_scan(pMac, session_id,
 					ROAM_SCAN_OFFLOAD_STOP,
 					REASON_SUPPLICANT_DISABLED_ROAMING);
 			}
-
+		}
 	}
 }
 

@@ -23,8 +23,8 @@
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 #include <sound/tlv.h>
-#include <btfm_slim.h>
-#include <btfm_slim_wcn3990.h>
+#include "btfm_slim.h"
+#include "btfm_slim_wcn3990.h"
 #include <linux/bluetooth-power.h>
 
 int btfm_slim_write(struct btfmslim *btfmslim,
@@ -499,9 +499,6 @@ static int btfm_slim_probe(struct slim_device *slim)
 	btfm_slim->dev = &slim->dev;
 	ret = btfm_slim_register_codec(&slim->dev);
 	ret = bt_register_slimdev(&slim->dev);
-	/* Huaqin add for test card register fail reason by xudayi at 2018/02/24 start */
-	BTFMSLIM_ERR("btfm SLIMBUS register success\n");
-	/* Huaqin add for test card register fail reason by xudayi at 2018/02/24 end */
 	return ret;
 
 dealloc:

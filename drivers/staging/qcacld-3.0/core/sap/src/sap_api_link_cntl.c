@@ -1,8 +1,5 @@
 /*
- * Copyright (c) 2012-2017 The Linux Foundation. All rights reserved.
- *
- * Previously licensed under the ISC license by Qualcomm Atheros, Inc.
- *
+ * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -17,12 +14,6 @@
  * PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
  * TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
  * PERFORMANCE OF THIS SOFTWARE.
- */
-
-/*
- * This file was originally distributed by Qualcomm Atheros, Inc.
- * under proprietary terms before Copyright ownership was assigned
- * to the Linux Foundation.
  */
 
 /*===========================================================================
@@ -118,6 +109,11 @@ QDF_STATUS wlansap_scan_callback(tHalHandle hal_handle,
 	if (sap_ctx->sapsMachine == eSAP_DISCONNECTED) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_WARN,
 				"In %s BSS already stopped", __func__);
+		if (sap_ctx->channelList != NULL) {
+			qdf_mem_free(sap_ctx->channelList);
+			sap_ctx->channelList = NULL;
+			sap_ctx->num_of_channel = 0;
+		}
 		return QDF_STATUS_E_FAILURE;
 	}
 
@@ -159,16 +155,6 @@ QDF_STATUS wlansap_scan_callback(tHalHandle hal_handle,
 				  __func__, scan_id);
 #endif
 		operChannel = sap_select_channel(hal_handle, sap_ctx, result);
-		if (!operChannel) {
-			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-				"No channel was selected from preferred channel for Operating channel");
-
-			operChannel = sap_ctx->acs_cfg->start_ch;
-
-			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-				"Selecting operating channel as starting channel from preferred channel list: %d",
-				operChannel);
-		}
 		sme_scan_result_purge(hal_handle, result);
 		break;
 
@@ -284,6 +270,7 @@ static QDF_STATUS sap_hdd_signal_event_handler(void *ctx)
 {
 	ptSapContext sap_ctx = (struct sSapContext *)ctx;
 	QDF_STATUS status;
+
 	if (NULL == sap_ctx) {
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
 				FL("sap context is not valid"));
@@ -326,14 +313,10 @@ wlansap_pre_start_bss_acs_scan_callback(tHalHandle hal_handle, void *pcontext,
 			FL("CSR scan_status = eCSR_SCAN_ABORT/FAILURE (%d), choose default channel"),
 			scan_status);
 		sap_ctx->channel =
-			sap_select_default_oper_chan(hal_handle,
-					sap_ctx->acs_cfg->hw_mode);
-		sap_ctx->sap_state = eSAP_ACS_CHANNEL_SELECTED;
-		sap_ctx->sap_status = eSAP_STATUS_SUCCESS;
-		goto close_session;
+			sap_select_default_oper_chan(sap_ctx->acs_cfg);
+		sap_ctx->acs_cfg->pri_ch = sap_ctx->channel;
+		goto end;
 	}
-	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-		FL("CSR scan_status = eCSR_SCAN_SUCCESS (%d)"), scan_status);
 	/*
 	* Now do
 	* 1. Get scan results
@@ -368,46 +351,22 @@ wlansap_pre_start_bss_acs_scan_callback(tHalHandle hal_handle, void *pcontext,
 		}
 #endif
 		oper_channel = sap_select_channel(hal_handle, sap_ctx, presult);
-		if (!oper_channel) {
-			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-				"No channel was selected from preferred channel for Operating channel");
-
-			oper_channel = sap_ctx->acs_cfg->start_ch;
-
-			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-				"Selecting operating channel as starting channel from preferred channel list: %d",
-				oper_channel);
-		}
 		sme_scan_result_purge(hal_handle, presult);
 	}
 
 	if (oper_channel == SAP_CHANNEL_NOT_SELECTED) {
-#ifdef SOFTAP_CHANNEL_RANGE
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO,
-			  FL("No suitable channel selected"));
-
-		sap_ctx->sap_state = eSAP_ACS_CHANNEL_SELECTED;
-		sap_ctx->sap_status = eSAP_STATUS_FAILURE;
-		goto close_session;
-	} else {
-#else
+			  FL("No suitable channel, so select default channel"));
 		sap_ctx->channel =
-			sap_select_default_oper_chan(hal_handle,
-				sap_ctx->acs_cfg->hw_mode);
+			sap_select_default_oper_chan(sap_ctx->acs_cfg);
+		sap_ctx->acs_cfg->pri_ch = sap_ctx->channel;
 	} else {
-#endif
 		/* Valid Channel Found from scan results. */
 		sap_ctx->acs_cfg->pri_ch = oper_channel;
 		sap_ctx->channel = oper_channel;
 	}
-	sap_config_acs_result(hal_handle, sap_ctx,
-			sap_ctx->acs_cfg->ht_sec_ch);
 
-	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-		  FL("Channel selected = %d"), sap_ctx->channel);
-	sap_ctx->sap_state = eSAP_ACS_CHANNEL_SELECTED;
-	sap_ctx->sap_status = eSAP_STATUS_SUCCESS;
-close_session:
+end:
 #ifdef SOFTAP_CHANNEL_RANGE
 	if (sap_ctx->channelList != NULL) {
 		/*
@@ -420,6 +379,14 @@ close_session:
 		sap_ctx->num_of_channel = 0;
 	}
 #endif
+	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
+		  FL("Channel selected = %d"), sap_ctx->channel);
+	sap_ctx->sap_state = eSAP_ACS_CHANNEL_SELECTED;
+	sap_ctx->sap_status = eSAP_STATUS_SUCCESS;
+
+	sap_config_acs_result(hal_handle, sap_ctx,
+			sap_ctx->acs_cfg->ht_sec_ch);
+
 	sap_hdd_signal_event_handler(sap_ctx);
 	return status;
 }
@@ -452,9 +419,20 @@ wlansap_roam_process_ch_change_success(tpAniSirGlobal mac_ctx,
 		  FL("sapdfs: changing target channel to [%d]"),
 		  mac_ctx->sap.SapDfsInfo.target_channel);
 	sap_ctx->channel = mac_ctx->sap.SapDfsInfo.target_channel;
-	/* Identify if this is channel change in radar detected state */
-	if (eSAP_DISCONNECTING != sap_ctx->sapsMachine)
+
+	/*
+	 * Identify if this is channel change in radar detected state
+	 * Also if we are waiting for sap to stop, don't proceed further
+	 * to restart SAP again.
+	 */
+	if ((eSAP_DISCONNECTING != sap_ctx->sapsMachine) ||
+	    sap_ctx->stop_bss_in_progress) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO,
+			  FL("sapdfs: state [%d] Stop BSS in progress [%d], not starting SAP after channel change"),
+			  sap_ctx->sapsMachine,
+			  sap_ctx->stop_bss_in_progress);
 		return;
+	}
 
 	if (sap_ctx->ch_params.ch_width == CH_WIDTH_160MHZ) {
 		is_ch_dfs = true;
@@ -667,6 +645,7 @@ wlansap_roam_process_dfs_chansw_update(tHalHandle hHal,
 	/* Issue channel change req for each sapctx */
 	for (intf = 0; intf < SAP_MAX_NUM_SESSION; intf++) {
 		ptSapContext pSapContext;
+
 		if (!((QDF_SAP_MODE == mac_ctx->sap.sapCtxList[intf].sapPersona)
 		    && (mac_ctx->sap.sapCtxList[intf].pSapContext != NULL)))
 			continue;
@@ -710,6 +689,7 @@ wlansap_roam_process_dfs_radar_found(tpAniSirGlobal mac_ctx,
 {
 	QDF_STATUS qdf_status;
 	tWLAN_SAPEvent sap_event;
+
 	if (eSAP_DFS_CAC_WAIT == sap_ctx->sapsMachine) {
 		if (sap_ctx->csr_roamProfile.disableDFSChSwitch) {
 			QDF_TRACE(QDF_MODULE_ID_SAP,
@@ -804,6 +784,7 @@ wlansap_roam_process_infra_assoc_ind(ptSapContext sap_ctx,
 				     QDF_STATUS *ret_status)
 {
 	QDF_STATUS qdf_status;
+
 	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
 		  FL("CSR roam_result = eCSR_ROAM_RESULT_INFRA_ASSOCIATION_IND (%d)"),
 		  roam_result);
@@ -890,8 +871,11 @@ wlansap_roam_callback(void *ctx, tCsrRoamInfo *csr_roam_info, uint32_t roamId,
 	}
 
 	mac_ctx = PMAC_STRUCT(hal);
-	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-		  FL("Before switch on roam_status = %d"), roam_status);
+	if (eCSR_ROAM_UPDATE_SCAN_RESULT != roam_status) {
+		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
+			FL("roam_status = %d, roam_result = %d"),
+			roam_status, roam_result);
+	}
 
 	sta_sap_scc_on_dfs_chan = cds_is_sta_sap_scc_allowed_on_dfs_channel();
 
@@ -963,10 +947,12 @@ wlansap_roam_callback(void *ctx, tCsrRoamInfo *csr_roam_info, uint32_t roamId,
 		break;
 	case eCSR_ROAM_REMAIN_CHAN_READY:
 		/* roamId contains scan identifier */
-		sap_ctx->roc_ind_scan_id = csr_roam_info->roc_scan_id;
-		sap_signal_hdd_event(sap_ctx, csr_roam_info,
-				     eSAP_REMAIN_CHAN_READY,
-				     (void *) eSAP_STATUS_SUCCESS);
+		if (csr_roam_info) {
+			sap_ctx->roc_ind_scan_id = csr_roam_info->roc_scan_id;
+			sap_signal_hdd_event(sap_ctx, csr_roam_info,
+					     eSAP_REMAIN_CHAN_READY,
+					     (void *) eSAP_STATUS_SUCCESS);
+		}
 		break;
 	case eCSR_ROAM_DISCONNECT_ALL_P2P_CLIENTS:
 		sap_signal_hdd_event(sap_ctx, csr_roam_info,
@@ -990,7 +976,13 @@ wlansap_roam_callback(void *ctx, tCsrRoamInfo *csr_roam_info, uint32_t roamId,
 					FL("Ignore the Radar indication"));
 			break;
 		}
-
+		if (sap_ctx->sapsMachine != eSAP_STARTED &&
+		    sap_ctx->sapsMachine != eSAP_DFS_CAC_WAIT) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
+				  FL("Ignore Radar event in sap state %d"),
+				  sap_ctx->sapsMachine);
+			break;
+		}
 		if (sap_ctx->is_pre_cac_on) {
 			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_MED,
 				FL("sapdfs: Radar detect on pre cac:%d"),
@@ -1009,6 +1001,14 @@ wlansap_roam_callback(void *ctx, tCsrRoamInfo *csr_roam_info, uint32_t roamId,
 
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_MED,
 			  FL("sapdfs: Indicate eSAP_DFS_RADAR_DETECT to HDD"));
+
+		if (!csr_roam_info) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+				  FL("Invalid CSR Roam Info"));
+			wlansap_context_put(sap_ctx);
+			return -QDF_STATUS_E_INVAL;
+		}
+
 		sap_signal_hdd_event(sap_ctx, NULL, eSAP_DFS_RADAR_DETECT,
 				     (void *) eSAP_STATUS_SUCCESS);
 		/* sync to latest DFS-NOL */
@@ -1052,7 +1052,9 @@ wlansap_roam_callback(void *ctx, tCsrRoamInfo *csr_roam_info, uint32_t roamId,
 					  QDF_TRACE_LEVEL_ERROR,
 					  FL("sapdfs: no available channel for sapctx[%pK], StopBss"),
 					  pSapContext);
-				wlansap_stop_bss(pSapContext);
+				sap_signal_hdd_event(pSapContext, NULL,
+					eSAP_STOP_BSS_DUE_TO_NO_CHNL,
+					(void *) eSAP_STATUS_SUCCESS);
 			}
 		}
 		break;
@@ -1075,27 +1077,30 @@ wlansap_roam_callback(void *ctx, tCsrRoamInfo *csr_roam_info, uint32_t roamId,
 				     eSAP_UPDATE_SCAN_RESULT,
 				     (void *) eSAP_STATUS_SUCCESS);
 		break;
-	case eCSR_ROAM_LOSTLINK_DETECTED:
-		sap_signal_hdd_event(sap_ctx, csr_roam_info,
-				     eSAP_STA_LOSTLINK_DETECTED,
-				     (void *)eSAP_STATUS_SUCCESS);
-		break;
+
 	default:
 		break;
 	}
 
-	QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
-		  FL("Before switch on roam_result = %d"), roam_result);
-
 	switch (roam_result) {
 	case eCSR_ROAM_RESULT_INFRA_ASSOCIATION_IND:
-		wlansap_roam_process_infra_assoc_ind(sap_ctx, roam_result,
-						csr_roam_info, &qdf_ret_status);
+		if (csr_roam_info)
+			wlansap_roam_process_infra_assoc_ind(sap_ctx,
+						roam_result, csr_roam_info,
+						&qdf_ret_status);
 		break;
 	case eCSR_ROAM_RESULT_INFRA_ASSOCIATION_CNF:
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
 			  FL("CSR roam_result = eCSR_ROAM_RESULT_INFRA_ASSOCIATION_CNF (%d)"),
 			  roam_result);
+
+		if (!csr_roam_info) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+				  FL("Invalid CSR Roam Info"));
+			qdf_ret_status = QDF_STATUS_E_INVAL;
+			break;
+		}
+
 		sap_ctx->nStaWPARSnReqIeLength = csr_roam_info->rsnIELen;
 		if (sap_ctx->nStaWPARSnReqIeLength)
 			qdf_mem_copy(sap_ctx->pStaWpaRsnReqIE,
@@ -1183,6 +1188,14 @@ wlansap_roam_callback(void *ctx, tCsrRoamInfo *csr_roam_info, uint32_t roamId,
 		QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_INFO_HIGH,
 			  FL("CSR roam_result = eCSR_ROAM_RESULT_INFRA_STARTED (%d)"),
 			  roam_result);
+
+		if (!csr_roam_info) {
+			QDF_TRACE(QDF_MODULE_ID_SAP, QDF_TRACE_LEVEL_ERROR,
+				  FL("Invalid CSR Roam Info"));
+			qdf_ret_status = QDF_STATUS_E_INVAL;
+			break;
+		}
+
 		/*
 		 * In the current implementation, hostapd is not aware that
 		 * drive will support DFS. Hence, driver should inform

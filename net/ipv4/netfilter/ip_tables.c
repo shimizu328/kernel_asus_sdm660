@@ -413,6 +413,8 @@ ipt_do_table(struct sk_buff *skb,
 					break;
 				}
 				jumpstack[stackidx++] = e;
+				pr_debug("Pushed %p into pos %u\n",
+					 e, stackidx - 1);
 			}
 
 			e = get_entry(table_base, v);
@@ -1169,6 +1171,7 @@ get_entries(struct net *net, struct ipt_get_entries __user *uptr,
 			 *len, sizeof(get) + get.size);
 		return -EINVAL;
 	}
+	get.name[sizeof(get.name) - 1] = '\0';
 
 	t = xt_find_table_lock(net, AF_INET, get.name);
 	if (!IS_ERR_OR_NULL(t)) {
@@ -1797,6 +1800,7 @@ compat_get_entries(struct net *net, struct compat_ipt_get_entries __user *uptr,
 			 *len, sizeof(get) + get.size);
 		return -EINVAL;
 	}
+	get.name[sizeof(get.name) - 1] = '\0';
 
 	xt_compat_lock(AF_INET);
 	t = xt_find_table_lock(net, AF_INET, get.name);

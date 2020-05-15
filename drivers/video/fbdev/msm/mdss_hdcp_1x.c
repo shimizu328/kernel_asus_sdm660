@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -948,7 +948,7 @@ static int hdcp_1x_verify_r0(struct hdcp_1x *hdcp)
 		if (!hdcp->sink_r0_ready) {
 			reinit_completion(&hdcp->sink_r0_available);
 			timeout_count = wait_for_completion_timeout(
-				&hdcp->sink_r0_available, msecs_to_jiffies(500));
+				&hdcp->sink_r0_available, HZ / 2);
 
 			if (hdcp->reauth) {
 				pr_err("sink R0 not ready\n");
@@ -1348,15 +1348,15 @@ static int hdcp_1x_authentication_part2(struct hdcp_1x *hdcp)
 	}
 
 	do {
-		rc = hdcp_1x_transfer_v_h(hdcp);
-		if (rc)
-			goto error;
-
 		/* do not proceed further if no device connected */
 		if (!hdcp->current_tp.dev_count) {
 			rc = -EINVAL;
 			goto error;
 		}
+
+		rc = hdcp_1x_transfer_v_h(hdcp);
+		if (rc)
+			goto error;
 
 		rc = hdcp_1x_write_ksv_fifo(hdcp);
 	} while (--v_retry && rc);
@@ -1512,7 +1512,7 @@ int hdcp_1x_authenticate(void *input)
 	if (!hdcp_1x_load_keys(input)) {
 
 		queue_delayed_work(hdcp->workq,
-			&hdcp->hdcp_auth_work, msecs_to_jiffies(500));
+			&hdcp->hdcp_auth_work, HZ/2);
 	} else {
 		hdcp->hdcp_state = HDCP_STATE_AUTH_FAIL;
 		hdcp_1x_update_auth_status(hdcp);

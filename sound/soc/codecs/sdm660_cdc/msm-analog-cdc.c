@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -351,8 +351,7 @@ void msm_anlg_cdc_spk_ext_pa_cb(
 	dev_dbg(codec->dev, "%s: Enter\n", __func__);
 	sdm660_cdc->codec_spk_ext_pa_cb = codec_spk_ext_pa;
 }
-
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 void msm_anlg_cdc_hph_ext_sw_cb(
 		int (*codec_hph_ext_sw)(struct snd_soc_codec *codec,
 			int enable), struct snd_soc_codec *codec)
@@ -369,8 +368,7 @@ void msm_anlg_cdc_hph_ext_sw_cb(
 	dev_dbg(codec->dev, "%s: Enter\n", __func__);
 	sdm660_cdc->codec_hph_ext_sw_cb= codec_hph_ext_sw;
 }
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
-
+#endif
 static void msm_anlg_cdc_compute_impedance(struct snd_soc_codec *codec, s16 l,
 					   s16 r, uint32_t *zl, uint32_t *zr,
 					   bool high)
@@ -1650,11 +1648,11 @@ static int msm_anlg_cdc_pa_gain_get(struct snd_kcontrol *kcontrol,
 		if (ear_pa_gain == 0x00) {
 			ucontrol->value.integer.value[0] = 3;
 		} else if (ear_pa_gain == 0x01) {
-			ucontrol->value.integer.value[0] = 2;
+			ucontrol->value.integer.value[1] = 2;
 		} else if (ear_pa_gain == 0x02) {
-			ucontrol->value.integer.value[0] = 1;
+			ucontrol->value.integer.value[2] = 1;
 		} else if (ear_pa_gain == 0x03) {
-			ucontrol->value.integer.value[0] = 0;
+			ucontrol->value.integer.value[3] = 0;
 		} else {
 			dev_err(codec->dev,
 				"%s: ERROR: Unsupported Ear Gain = 0x%x\n",
@@ -1676,6 +1674,7 @@ static int msm_anlg_cdc_pa_gain_get(struct snd_kcontrol *kcontrol,
 			return -EINVAL;
 		}
 	}
+	ucontrol->value.integer.value[0] = ear_pa_gain;
 	dev_dbg(codec->dev, "%s: ear_pa_gain = 0x%x\n", __func__, ear_pa_gain);
 	return 0;
 }
@@ -2091,13 +2090,11 @@ static const char * const ext_spk_text[] = {
 static const char * const wsa_spk_text[] = {
 	"ZERO", "WSA"
 };
-
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 static const char * const ext_hph_text[] = {
 	"Off", "On"
 };
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
-
+#endif
 static const struct soc_enum adc2_enum =
 	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
 		ARRAY_SIZE(adc2_mux_text), adc2_mux_text);
@@ -2110,19 +2107,19 @@ static const struct soc_enum wsa_spk_enum =
 	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
 		ARRAY_SIZE(wsa_spk_text), wsa_spk_text);
 
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 static const struct soc_enum ext_hph_enum =
 	SOC_ENUM_SINGLE(SND_SOC_NOPM, 0,
 		ARRAY_SIZE(ext_hph_text), ext_hph_text);
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#endif
 
 static const struct snd_kcontrol_new ext_spk_mux =
 	SOC_DAPM_ENUM("Ext Spk Switch Mux", ext_spk_enum);
 
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 static const struct snd_kcontrol_new ext_hph_mux =
 	SOC_DAPM_ENUM("Ext Hph Switch Mux", ext_hph_enum);
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#endif
 
 static const struct snd_kcontrol_new tx_adc2_mux =
 	SOC_DAPM_ENUM("ADC2 MUX Mux", adc2_enum);
@@ -2828,7 +2825,7 @@ static void wcd_imped_config(struct snd_soc_codec *codec,
 					0x20, 0x00);
 				snd_soc_update_bits(codec,
 					MSM89XX_PMIC_ANALOG_NCP_VCTRL,
-					0x07, 0x07);
+					0x07, 0x04);
 			}
 			break;
 		}
@@ -2897,11 +2894,7 @@ static int msm_anlg_cdc_hphl_dac_event(struct snd_soc_dapm_widget *w,
 			MSM89XX_PMIC_ANALOG_RX_HPH_L_PA_DAC_CTL, 0x02, 0x00);
 		break;
 	case SND_SOC_DAPM_POST_PMD:
-		if (!ret)
-			wcd_imped_config(codec, impedl, false);
-		else
-			dev_dbg(codec->dev, "Failed to get mbhc impedance %d\n",
-				ret);
+		wcd_imped_config(codec, impedl, false);
 		snd_soc_update_bits(codec,
 			MSM89XX_PMIC_DIGITAL_CDC_ANA_CLK_CTL, 0x02, 0x00);
 		snd_soc_update_bits(codec,
@@ -3109,11 +3102,11 @@ static const struct snd_soc_dapm_route audio_map[] = {
 	{"HEADPHONE", NULL, "HPHL PA"},
 	{"HEADPHONE", NULL, "HPHR PA"},
 
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 	{"Ext Hph", NULL, "Ext Hph Switch"},
 	{"Ext Hph Switch", "On", "HPHL PA"},
 	{"Ext Hph Switch", "On", "HPHR PA"},
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#endif
 
 	{"Ext Spk", NULL, "Ext Spk Switch"},
 	{"Ext Spk Switch", "On", "HPHL PA"},
@@ -3371,8 +3364,7 @@ static int msm_anlg_cdc_codec_enable_spk_ext_pa(struct snd_soc_dapm_widget *w,
 	}
 	return 0;
 }
-
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 static int msm_anlg_cdc_codec_enable_hph_ext_sw(struct snd_soc_dapm_widget *w,
 						struct snd_kcontrol *kcontrol,
 						int event)
@@ -3398,8 +3390,7 @@ static int msm_anlg_cdc_codec_enable_hph_ext_sw(struct snd_soc_dapm_widget *w,
 	}
 	return 0;
 }
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
-
+#endif
 static int msm_anlg_cdc_codec_enable_ear_pa(struct snd_soc_dapm_widget *w,
 					    struct snd_kcontrol *kcontrol,
 					    int event)
@@ -3490,8 +3481,8 @@ static const struct snd_soc_dapm_widget msm_anlg_cdc_dapm_widgets[] = {
 		msm_anlg_cdc_hph_pa_event, SND_SOC_DAPM_PRE_PMU |
 		SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_PRE_PMD |
 		SND_SOC_DAPM_POST_PMD),
-	SND_SOC_DAPM_PGA_E("SPK PA", SND_SOC_NOPM,
-			0, 0, NULL, 0, msm_anlg_cdc_codec_enable_spk_pa,
+	SND_SOC_DAPM_PGA_E("SPK PA", MSM89XX_PMIC_ANALOG_SPKR_DRV_CTL,
+			7, 0, NULL, 0, msm_anlg_cdc_codec_enable_spk_pa,
 			SND_SOC_DAPM_PRE_PMU | SND_SOC_DAPM_POST_PMU |
 			SND_SOC_DAPM_PRE_PMD | SND_SOC_DAPM_POST_PMD),
 	SND_SOC_DAPM_PGA_E("LINEOUT PA", MSM89XX_PMIC_ANALOG_RX_LO_EN_CTL,
@@ -3505,9 +3496,9 @@ static const struct snd_soc_dapm_widget msm_anlg_cdc_dapm_widgets[] = {
 	SND_SOC_DAPM_MUX("RDAC2 MUX", SND_SOC_NOPM, 0, 0, &rdac2_mux),
 	SND_SOC_DAPM_MUX("WSA Spk Switch", SND_SOC_NOPM, 0, 0, wsa_spk_mux),
 	SND_SOC_DAPM_MUX("Ext Spk Switch", SND_SOC_NOPM, 0, 0, &ext_spk_mux),
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 	SND_SOC_DAPM_MUX("Ext Hph Switch", SND_SOC_NOPM, 0, 0, &ext_hph_mux),
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#endif
 	SND_SOC_DAPM_MUX("LINE_OUT", SND_SOC_NOPM, 0, 0, lo_mux),
 	SND_SOC_DAPM_MUX("ADC2 MUX", SND_SOC_NOPM, 0, 0, &tx_adc2_mux),
 
@@ -3532,9 +3523,10 @@ static const struct snd_soc_dapm_widget msm_anlg_cdc_dapm_widgets[] = {
 		SND_SOC_DAPM_POST_PMD),
 
 	SND_SOC_DAPM_SPK("Ext Spk", msm_anlg_cdc_codec_enable_spk_ext_pa),
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+
+#ifdef CONFIG_MACH_ASUS_X00T
 	SND_SOC_DAPM_HP("Ext Hph", msm_anlg_cdc_codec_enable_hph_ext_sw),
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#endif
 
 	SND_SOC_DAPM_SWITCH("ADC1_INP1", SND_SOC_NOPM, 0, 0,
 			    &adc1_switch),
@@ -3748,18 +3740,6 @@ static const struct sdm660_cdc_reg_mask_val
 	{MSM89XX_PMIC_ANALOG_RX_COM_OCP_COUNT, 0xFF, 0xFF},
 };
 
-static void msm_anlg_cdc_codec_init_cache(struct snd_soc_codec *codec)
-{
-	u32 i;
-
-	regcache_cache_only(codec->component.regmap, true);
-	/* update cache with POR values */
-	for (i = 0; i < ARRAY_SIZE(msm89xx_pmic_cdc_defaults); i++)
-		snd_soc_write(codec, msm89xx_pmic_cdc_defaults[i].reg,
-			      msm89xx_pmic_cdc_defaults[i].def);
-	regcache_cache_only(codec->component.regmap, false);
-}
-
 static void msm_anlg_cdc_codec_init_reg(struct snd_soc_codec *codec)
 {
 	u32 i;
@@ -3805,7 +3785,7 @@ static struct regulator *msm_anlg_cdc_find_regulator(
 			return sdm660_cdc->supplies[i].consumer;
 	}
 
-	dev_err(sdm660_cdc->dev, "Error: regulator not found:%s\n"
+	dev_dbg(sdm660_cdc->dev, "Error: regulator not found:%s\n"
 				, name);
 	return NULL;
 }
@@ -3892,12 +3872,11 @@ static int msm_anlg_cdc_device_down(struct snd_soc_codec *codec)
 	}
 	msm_anlg_cdc_boost_off(codec);
 	sdm660_cdc_priv->hph_mode = NORMAL_MODE;
-
-	/* 40ms to allow boost to discharge */
-	msleep(40);
 	/* Disable PA to avoid pop during codec bring up */
 	snd_soc_update_bits(codec, MSM89XX_PMIC_ANALOG_RX_HPH_CNP_EN,
 			0x30, 0x00);
+	/* 40ms to allow boost to discharge */
+	msleep(40);
 	snd_soc_update_bits(codec, MSM89XX_PMIC_ANALOG_SPKR_DRV_CTL,
 			0x80, 0x00);
 	snd_soc_write(codec,
@@ -4257,7 +4236,6 @@ static int msm_anlg_cdc_soc_probe(struct snd_soc_codec *codec)
 				  ARRAY_SIZE(hph_type_detect_controls));
 
 	msm_anlg_cdc_bringup(codec);
-	msm_anlg_cdc_codec_init_cache(codec);
 	msm_anlg_cdc_codec_init_reg(codec);
 	msm_anlg_cdc_update_reg_defaults(codec);
 
@@ -4664,8 +4642,9 @@ static int msm_anlg_cdc_probe(struct platform_device *pdev)
 	int adsp_state;
 
 	adsp_state = apr_get_subsys_state();
-	if (adsp_state != APR_SUBSYS_LOADED) {
-		dev_err(&pdev->dev, "Adsp is not loaded yet %d\n",
+	if (adsp_state != APR_SUBSYS_LOADED ||
+		!q6core_is_adsp_ready()) {
+		dev_dbg(&pdev->dev, "Adsp is not loaded yet %d\n",
 			adsp_state);
 		return -EPROBE_DEFER;
 	}

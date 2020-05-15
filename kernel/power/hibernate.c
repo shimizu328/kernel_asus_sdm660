@@ -30,6 +30,7 @@
 #include <linux/genhd.h>
 #include <linux/ktime.h>
 #include <trace/events/power.h>
+#include <soc/qcom/boot_stats.h>
 
 #include "power.h"
 
@@ -297,11 +298,11 @@ static int create_image(int platform_mode)
 
 	in_suspend = 1;
 	save_processor_state();
-	trace_suspend_resume(TPS("machine_suspend"), PM_EVENT_HIBERNATE, true);
+//	trace_suspend_resume(TPS("machine_suspend"), PM_EVENT_HIBERNATE, true);
 	error = swsusp_arch_suspend();
 	/* Restore control flow magically appears here */
 	restore_processor_state();
-	trace_suspend_resume(TPS("machine_suspend"), PM_EVENT_HIBERNATE, false);
+//	trace_suspend_resume(TPS("machine_suspend"), PM_EVENT_HIBERNATE, false);
 	if (error)
 		printk(KERN_ERR "PM: Error %d creating hibernation image\n",
 			error);
@@ -469,6 +470,7 @@ static int resume_target_kernel(bool platform_mode)
 	touch_softlockup_watchdog();
 
 	syscore_resume();
+	place_marker("PM: Image Restoration failed!");
 
  Enable_irqs:
 	local_irq_enable();
@@ -705,6 +707,7 @@ int hibernate(void)
 		pm_restore_gfp_mask();
 	} else {
 		pr_debug("PM: Image restored successfully.\n");
+		place_marker("PM: Image restored!");
 	}
 
  Free_bitmaps:

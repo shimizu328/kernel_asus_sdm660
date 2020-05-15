@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1036,6 +1036,39 @@ static int ipa_fltrt_generate_hw_rule_bdy_ip6(u16 *en_rule,
 		ihl_ofst_meq32 += 2;
 	}
 
+	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IP_TYPE) {
+		if (IPA_IS_RAN_OUT_OF_EQ(ipa3_0_ihl_ofst_meq32,
+			ihl_ofst_meq32)) {
+			IPAHAL_ERR("ran out of ihl_meq32 eq\n");
+			goto err;
+		}
+		*en_rule |= IPA_GET_RULE_EQ_BIT_PTRN(
+			ipa3_0_ihl_ofst_meq32[ihl_ofst_meq32]);
+		/* 22  => offset of IP type after v6 header */
+		extra = ipa_write_8(22, extra);
+		rest = ipa_write_32(0xF0000000, rest);
+		if (attrib->type == 0x40)
+			rest = ipa_write_32(0x40000000, rest);
+		else
+			rest = ipa_write_32(0x60000000, rest);
+		ihl_ofst_meq32++;
+	}
+
+	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IPV4_DST_ADDR) {
+		if (IPA_IS_RAN_OUT_OF_EQ(ipa3_0_ihl_ofst_meq32,
+			ihl_ofst_meq32)) {
+			IPAHAL_ERR("ran out of ihl_meq32 eq\n");
+			goto err;
+		}
+		*en_rule |= IPA_GET_RULE_EQ_BIT_PTRN(
+			ipa3_0_ihl_ofst_meq32[ihl_ofst_meq32]);
+		/* 38  => offset of inner IPv4 addr */
+		extra = ipa_write_8(38, extra);
+		rest = ipa_write_32(attrib->u.v4.dst_addr_mask, rest);
+		rest = ipa_write_32(attrib->u.v4.dst_addr, rest);
+		ihl_ofst_meq32++;
+	}
+
 	if (attrib->attrib_mask & IPA_FLT_META_DATA) {
 		*en_rule |= IPA_GET_RULE_EQ_BIT_PTRN(IPA_METADATA_COMPARE);
 		rest = ipa_write_32(attrib->meta_data_mask, rest);
@@ -2004,6 +2037,40 @@ static int ipa_flt_generate_eq_ip6(enum ipa_ip_type ip,
 		ihl_ofst_meq32 += 2;
 	}
 
+	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IP_TYPE) {
+		if (IPA_IS_RAN_OUT_OF_EQ(ipa3_0_ihl_ofst_meq32,
+			ihl_ofst_meq32)) {
+			IPAHAL_ERR("ran out of ihl_meq32 eq\n");
+			return -EPERM;
+		}
+		*en_rule |= IPA_GET_RULE_EQ_BIT_PTRN(
+			ipa3_0_ihl_ofst_meq32[ihl_ofst_meq32]);
+		/* 22  => offset of inner IP type after v6 header */
+		eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].offset = 22;
+		eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].mask =
+			0xF0000000;
+		eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].value =
+			(u32)attrib->type << 24;
+		ihl_ofst_meq32++;
+	}
+
+	if (attrib->attrib_mask & IPA_FLT_L2TP_INNER_IPV4_DST_ADDR) {
+		if (IPA_IS_RAN_OUT_OF_EQ(ipa3_0_ihl_ofst_meq32,
+			ihl_ofst_meq32)) {
+			IPAHAL_ERR("ran out of ihl_meq32 eq\n");
+			return -EPERM;
+		}
+		*en_rule |= IPA_GET_RULE_EQ_BIT_PTRN(
+			ipa3_0_ihl_ofst_meq32[ihl_ofst_meq32]);
+		/* 38  => offset of inner IPv4 addr */
+		eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].offset = 38;
+		eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].mask =
+			attrib->u.v4.dst_addr_mask;
+		eq_atrb->ihl_offset_meq_32[ihl_ofst_meq32].value =
+			attrib->u.v4.dst_addr;
+		ihl_ofst_meq32++;
+	}
+
 	if (attrib->attrib_mask & IPA_FLT_MAC_ETHER_TYPE) {
 		if (IPA_IS_RAN_OUT_OF_EQ(ipa3_0_ofst_meq32, ofst_meq32)) {
 			IPAHAL_ERR_RL("ran out of meq32 eq\n");
@@ -2903,19 +2970,25 @@ static int ipa_fltrt_alloc_init_tbl_hdr(
 	u64 addr;
 	int i;
 	struct ipahal_fltrt_obj *obj;
+	gfp_t flag = GFP_KERNEL;
 
 	obj = &ipahal_fltrt_objs[ipahal_ctx->hw_type];
 
 	if (!params) {
-		IPAHAL_ERR_RL("Input error: params=%p\n", params);
+		IPAHAL_ERR_RL("Input error: params= NULL\n");
 		return -EINVAL;
 	}
 
 	params->nhash_hdr.size = params->tbls_num * obj->tbl_hdr_width;
+alloc:
 	params->nhash_hdr.base = dma_alloc_coherent(ipahal_ctx->ipa_pdev,
 		params->nhash_hdr.size,
-		&params->nhash_hdr.phys_base, GFP_KERNEL);
+		&params->nhash_hdr.phys_base, flag);
 	if (!params->nhash_hdr.base) {
+		if (flag == GFP_KERNEL) {
+			flag = GFP_ATOMIC;
+			goto alloc;
+		}
 		IPAHAL_ERR_RL("fail to alloc DMA buff of size %d\n",
 			params->nhash_hdr.size);
 		goto nhash_alloc_fail;
@@ -3097,6 +3170,7 @@ bdy_alloc_fail:
 int ipahal_fltrt_allocate_hw_sys_tbl(struct ipa_mem_buffer *tbl_mem)
 {
 	struct ipahal_fltrt_obj *obj;
+	gfp_t flag = GFP_KERNEL;
 
 	IPAHAL_DBG_LOW("Entry\n");
 
@@ -3114,10 +3188,14 @@ int ipahal_fltrt_allocate_hw_sys_tbl(struct ipa_mem_buffer *tbl_mem)
 
 	/* add word for rule-set terminator */
 	tbl_mem->size += obj->tbl_width;
-
+alloc:
 	tbl_mem->base = dma_alloc_coherent(ipahal_ctx->ipa_pdev, tbl_mem->size,
-		&tbl_mem->phys_base, GFP_KERNEL);
+		&tbl_mem->phys_base, flag);
 	if (!tbl_mem->base) {
+		if (flag == GFP_KERNEL) {
+			flag = GFP_ATOMIC;
+			goto alloc;
+		}
 		IPAHAL_ERR("fail to alloc DMA buf of size %d\n",
 			tbl_mem->size);
 		return -ENOMEM;
@@ -3339,9 +3417,13 @@ int ipahal_flt_generate_equation(enum ipa_ip_type ipt,
 		return -EINVAL;
 	}
 
-	if (!attrib || !eq_atrb) {
-		IPAHAL_ERR_RL("Input err: attrib=%p eq_atrb=%p\n",
-			attrib, eq_atrb);
+	if (!attrib) {
+		IPAHAL_ERR_RL("Input err: attrib= NULL\n");
+		return -EINVAL;
+	}
+
+	if (!eq_atrb) {
+		IPAHAL_ERR_RL("Input err: eq_atrb = NULL\n");
 		return -EINVAL;
 	}
 

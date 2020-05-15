@@ -62,6 +62,15 @@ struct drm_msm_timespec {
 	__s64 tv_nsec;         /* nanoseconds */
 };
 
+/* From CEA.861.3 */
+#define HDR_EOTF_SMTPE_ST2084	0x2
+#define HDR_EOTF_HLG		0x3
+
+/* hdr hdmi state takes possible values of 0, 1 and 2 respectively */
+#define DRM_MSM_HDR_DISABLE  0
+#define DRM_MSM_HDR_ENABLE   1
+#define DRM_MSM_HDR_RESET    2
+
 /*
  * HDR Metadata
  * These are defined as per EDID spec and shall be used by the sink
@@ -112,13 +121,14 @@ struct drm_msm_ext_panel_hdr_properties {
 	__u32 hdr_min_luminance;      /* Min Luminance */
 };
 
-#define MSM_PARAM_GPU_ID     0x01
-#define MSM_PARAM_GMEM_SIZE  0x02
-#define MSM_PARAM_CHIP_ID    0x03
-#define MSM_PARAM_MAX_FREQ   0x04
-#define MSM_PARAM_TIMESTAMP  0x05
-#define MSM_PARAM_GMEM_BASE  0x06
-#define MSM_PARAM_NR_RINGS   0x07
+#define MSM_PARAM_GPU_ID             0x01
+#define MSM_PARAM_GMEM_SIZE          0x02
+#define MSM_PARAM_CHIP_ID            0x03
+#define MSM_PARAM_MAX_FREQ           0x04
+#define MSM_PARAM_TIMESTAMP          0x05
+#define MSM_PARAM_GMEM_BASE          0x06
+#define MSM_PARAM_NR_RINGS           0x07
+#define MSM_PARAM_GPU_HANG_TIMEOUT   0xa0 /* timeout in ms */
 
 struct drm_msm_param {
 	__u32 pipe;           /* in, MSM_PIPE_x */
@@ -465,6 +475,7 @@ struct drm_msm_submitqueue_query {
 #define DRM_MSM_COUNTER_PUT            0x44
 #define DRM_MSM_COUNTER_READ           0x45
 #define DRM_MSM_GEM_SYNC               0x46
+#define DRM_MSM_RMFB2                  0x47
 
 /**
  * Currently DRM framework supports only VSYNC event.
@@ -508,6 +519,8 @@ struct drm_msm_submitqueue_query {
 #define DRM_IOCTL_MSM_SUBMITQUEUE_QUERY \
 	DRM_IOWR(DRM_COMMAND_BASE + DRM_MSM_SUBMITQUEUE_QUERY, \
 		struct drm_msm_submitqueue_query)
+#define DRM_IOCTL_MSM_RMFB2 DRM_IOW((DRM_COMMAND_BASE + \
+			DRM_MSM_RMFB2), unsigned int)
 
 #if defined(__cplusplus)
 }

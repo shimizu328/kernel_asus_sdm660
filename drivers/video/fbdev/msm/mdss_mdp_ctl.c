@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,6 +27,7 @@
 #include "mdss_mdp.h"
 #include "mdss_mdp_trace.h"
 #include "mdss_debug.h"
+#include "mdss_dsi.h"
 
 #define MDSS_MDP_QSEED3_VER_DOWNSCALE_LIM 2
 #define NUM_MIXERCFG_REGS 3
@@ -77,13 +78,15 @@ static inline u64 fudge_factor(u64 val, u32 numer, u32 denom)
 	u64 result = val;
 
 	if (val) {
-		u64 temp = -1UL;
+		u64 temp = U64_MAX;
 
 		do_div(temp, val);
 		if (temp > numer) {
 			/* no overflow, so we can do the operation*/
 			result = (val * (u64)numer);
 			do_div(result, denom);
+		} else {
+			pr_warn("Overflow, skip fudge factor\n");
 		}
 	}
 	return result;
@@ -357,9 +360,9 @@ static u32 mdss_mdp_perf_calc_pipe_prefill_video(struct mdss_mdp_prefill_params
 	}
 	prefill_bytes += fbc_bytes;
 
-	trace_mdp_perf_prefill_calc(params->pnum, latency_buf_bytes,
-		prefill->ot_bytes, y_buf_bytes, y_scaler_bytes, pp_lines,
-		pp_bytes, post_scaler_bytes, fbc_bytes, prefill_bytes);
+//	trace_mdp_perf_prefill_calc(params->pnum, latency_buf_bytes,
+//		prefill->ot_bytes, y_buf_bytes, y_scaler_bytes, pp_lines,
+//		pp_bytes, post_scaler_bytes, fbc_bytes, prefill_bytes);
 
 	pr_debug("ot=%d y_buf=%d pp_lines=%d pp=%d post_sc=%d fbc_bytes=%d\n",
 		prefill->ot_bytes, y_buf_bytes, pp_lines, pp_bytes,
@@ -1525,7 +1528,7 @@ static bool is_mdp_prefetch_needed(struct mdss_panel_info *pinfo)
  * the mdp fetch lines  as the last (25 - vbp - vpw) lines of vertical
  * front porch.
  */
-int mdss_mdp_get_prefetch_lines(struct mdss_panel_info *pinfo)
+int mdss_mdp_get_prefetch_lines(struct mdss_panel_info *pinfo, bool is_fixed)
 {
 	int prefetch_avail = 0;
 	int v_total, vfp_start;
@@ -1534,7 +1537,11 @@ int mdss_mdp_get_prefetch_lines(struct mdss_panel_info *pinfo)
 	if (!is_mdp_prefetch_needed(pinfo))
 		return 0;
 
-	v_total = mdss_panel_get_vtotal(pinfo);
+	if (is_fixed)
+		v_total = mdss_panel_get_vtotal_fixed(pinfo);
+	else
+		v_total = mdss_panel_get_vtotal(pinfo);
+
 	vfp_start = (pinfo->lcdc.v_back_porch + pinfo->lcdc.v_pulse_width +
 			pinfo->yres);
 
@@ -2231,7 +2238,7 @@ void mdss_mdp_ctl_perf_release_bw(struct mdss_mdp_ctl *ctl)
 		struct mdss_mdp_ctl *ctl_local =
 			mdss_mdp_get_main_ctl(ctl) ? : ctl;
 
-		trace_mdp_cmd_release_bw(ctl_local->num);
+//		trace_mdp_cmd_release_bw(ctl_local->num);
 		ctl_local->cur_perf.bw_ctl = 0;
 		ctl_local->new_perf.bw_ctl = 0;
 		pr_debug("Release BW ctl=%d\n", ctl_local->num);
@@ -2334,9 +2341,9 @@ static bool __mdss_mdp_compare_bw(
 			(stop_req && is_nrt))
 		update_bw = true;
 
-	trace_mdp_compare_bw(new_perf->bw_ctl, new_ib, new_perf->bw_writeback,
-		old_perf->bw_ctl, old_ib, old_perf->bw_writeback,
-		params_changed, update_bw);
+//	trace_mdp_compare_bw(new_perf->bw_ctl, new_ib, new_perf->bw_writeback,
+//		old_perf->bw_ctl, old_ib, old_perf->bw_writeback,
+//		params_changed, update_bw);
 
 	return update_bw;
 }
@@ -2573,6 +2580,7 @@ struct mdss_mdp_mixer *mdss_mdp_mixer_alloc(
 			mixer_pool += ctl->mdata->ndspp;
 			nmixers -= ctl->mdata->ndspp;
 		} else if ((ctl->panel_data->panel_info.is_pluggable) &&
+				!(ctl->panel_data->panel_info.is_prim_panel) &&
 				nmixers_active) {
 			mixer_pool += ctl->mdata->ndspp;
 			nmixers -= ctl->mdata->ndspp;
@@ -4227,6 +4235,14 @@ int mdss_mdp_ctl_destroy(struct mdss_mdp_ctl *ctl)
 	return 0;
 }
 
+static void mdss_mdp_wait_for_panel_on(struct mdss_panel_data *pdata)
+{
+	struct mdss_dsi_ctrl_pdata *ctrl_pdata =
+		container_of(pdata, typeof(*ctrl_pdata), panel_data);
+
+	wait_for_completion(&ctrl_pdata->wake_comp);
+}
+
 int mdss_mdp_ctl_intf_event(struct mdss_mdp_ctl *ctl, int event, void *arg,
 	u32 flags)
 {
@@ -4250,8 +4266,11 @@ int mdss_mdp_ctl_intf_event(struct mdss_mdp_ctl *ctl, int event, void *arg,
 	pr_debug("sending ctl=%d event=%d flag=0x%x\n", ctl->num, event, flags);
 
 	do {
-		if (pdata->event_handler)
+		if (pdata->event_handler) {
 			rc = pdata->event_handler(pdata, event, arg);
+			if (event == MDSS_EVENT_LINK_READY)
+				mdss_mdp_wait_for_panel_on(pdata);
+		}
 		pdata = pdata->next;
 	} while (rc == 0 && pdata && pdata->active &&
 		!(flags & CTL_INTF_EVENT_FLAG_SKIP_BROADCAST));
@@ -4888,7 +4907,8 @@ static inline void __mdss_mdp_mixer_write_layer(struct mdss_mdp_ctl *ctl,
 	u32 off[NUM_MIXERCFG_REGS];
 	int i;
 
-	BUG_ON(!values || count < NUM_MIXERCFG_REGS);
+	if (WARN_ON(!values || count < NUM_MIXERCFG_REGS))
+		return;
 
 	__mdss_mdp_mixer_get_offsets(mixer_num, off, ARRAY_SIZE(off));
 
@@ -5039,7 +5059,7 @@ static void mdss_mdp_mixer_setup(struct mdss_mdp_ctl *master_ctl,
 		return;
 	}
 
-	trace_mdp_mixer_update(mixer_hw->num);
+//	trace_mdp_mixer_update(mixer_hw->num);
 	pr_debug("setup mixer=%d hw=%d\n", mixer->num, mixer_hw->num);
 	screen_state = ctl->force_screen_state;
 
@@ -5161,7 +5181,7 @@ static void mdss_mdp_mixer_setup(struct mdss_mdp_ctl *master_ctl,
 		__mdss_mdp_mixer_update_cfg_masks(pipe->num,
 				pipe->multirect.num, stage, &mixercfg);
 
-		trace_mdp_sspp_change(pipe);
+//		trace_mdp_sspp_change(pipe);
 
 		pr_debug("stg=%d op=%x fg_alpha=%x bg_alpha=%x\n", stage,
 					blend_op, fg_alpha, bg_alpha);
@@ -5678,7 +5698,7 @@ int mdss_mdp_display_wait4comp(struct mdss_mdp_ctl *ctl)
 		ret = ctl->ops.wait_fnc(ctl, NULL);
 	ATRACE_END("wait_fnc");
 
-	trace_mdp_commit(ctl);
+//	trace_mdp_commit(ctl);
 
 	mdss_mdp_ctl_perf_update(ctl, 0, false);
 	mdata->bw_limit_pending = false;
@@ -6060,10 +6080,11 @@ int mdss_mdp_display_commit(struct mdss_mdp_ctl *ctl, void *arg,
 	    !bitmap_empty(mdata->bwc_enable_map, MAX_DRV_SUP_PIPES))
 		mdss_mdp_bwcpanic_ctrl(mdata, true);
 
-	ret = mdss_mdp_cwb_setup(ctl);
-	if (ret)
-		pr_warn("concurrent setup failed ctl=%d\n", ctl->num);
-
+	if (mdata->mdp_rev >= MDSS_MDP_HW_REV_300) {
+		ret = mdss_mdp_cwb_setup(ctl);
+		if (ret)
+			pr_warn("concurrent setup failed ctl=%d\n", ctl->num);
+	}
 	ctl_flush_bits |= ctl->flush_bits;
 
 	ATRACE_BEGIN("flush_kickoff");

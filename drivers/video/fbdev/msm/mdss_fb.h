@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -286,12 +286,17 @@ struct msm_fb_data_type {
 	u32 idle_state;
 	struct msm_fb_fps_info fps_info;
 	struct delayed_work idle_notify_work;
+#ifdef CONFIG_MACH_ASUS_X00T
+	struct delayed_work early_unblank_work;
+	bool early_unblank_work_queued;
+#endif
 
 	bool atomic_commit_pending;
 
 	int op_enable;
 	u32 fb_imgType;
 	int panel_reconfig;
+	int force_null_commit;
 	u32 panel_orientation;
 
 	u32 dst_format;
@@ -389,7 +394,7 @@ static inline void mdss_fb_update_notify_update(struct msm_fb_data_type *mfd)
 		if (mfd->no_update.timer.function)
 			del_timer(&(mfd->no_update.timer));
 
-		mfd->no_update.timer.expires = jiffies + msecs_to_jiffies(2000);
+		mfd->no_update.timer.expires = jiffies + (2 * HZ);
 		add_timer(&mfd->no_update.timer);
 		mutex_unlock(&mfd->no_update.lock);
 	}

@@ -549,6 +549,7 @@ static uint64_t aggregate_bus_req(struct msm_bus_node_device_type *bus_dev,
 	struct msm_bus_node_device_type *fab_dev = NULL;
 	uint32_t agg_scheme;
 	uint64_t max_ib = 0;
+	uint64_t max_ab = 0;
 	uint64_t sum_ab = 0;
 
 	if (!bus_dev || !to_msm_bus_node(bus_dev->node_info->bus_device)) {
@@ -556,14 +557,25 @@ static uint64_t aggregate_bus_req(struct msm_bus_node_device_type *bus_dev,
 		goto exit_agg_bus_req;
 	}
 
+	bus_dev->node_bw[ctx].max_ib_cl_name = NULL;
+	bus_dev->node_bw[ctx].max_ab_cl_name = NULL;
 	fab_dev = to_msm_bus_node(bus_dev->node_info->bus_device);
 	for (i = 0; i < bus_dev->num_lnodes; i++) {
+		if (bus_dev->lnode_list[i].lnode_ib[ctx] > max_ib)
+			bus_dev->node_bw[ctx].max_ib_cl_name =
+					bus_dev->lnode_list[i].cl_name;
 		max_ib = max(max_ib, bus_dev->lnode_list[i].lnode_ib[ctx]);
+		if (bus_dev->lnode_list[i].lnode_ab[ctx] > max_ab) {
+			max_ab = bus_dev->lnode_list[i].lnode_ab[ctx];
+			bus_dev->node_bw[ctx].max_ab_cl_name =
+					bus_dev->lnode_list[i].cl_name;
+		}
 		sum_ab += bus_dev->lnode_list[i].lnode_ab[ctx];
 	}
 
 	bus_dev->node_bw[ctx].sum_ab = sum_ab;
 	bus_dev->node_bw[ctx].max_ib = max_ib;
+	bus_dev->node_bw[ctx].max_ab = max_ab;
 
 	if (bus_dev->node_info->agg_params.agg_scheme != AGG_SCHEME_NONE)
 		agg_scheme = bus_dev->node_info->agg_params.agg_scheme;
@@ -1156,7 +1168,7 @@ static int update_context(uint32_t cl, bool active_only,
 		goto exit_update_context;
 	}
 
-	trace_bus_update_request_end(pdata->name);
+//	trace_bus_update_request_end(pdata->name);
 
 exit_update_context:
 	rt_mutex_unlock(&msm_bus_adhoc_lock);
@@ -1219,7 +1231,7 @@ static int update_request_adhoc(uint32_t cl, unsigned int index)
 		goto exit_update_request;
 	}
 
-	trace_bus_update_request_end(pdata->name);
+//	trace_bus_update_request_end(pdata->name);
 
 exit_update_request:
 	rt_mutex_unlock(&msm_bus_adhoc_lock);
@@ -1285,7 +1297,7 @@ static int update_bw_adhoc(struct msm_bus_client_handle *cl, u64 ab, u64 ib)
 
 	if (log_transaction)
 		getpath_debug(cl->mas, cl->first_hop, cl->active_only);
-	trace_bus_update_request_end(cl->name);
+//	trace_bus_update_request_end(cl->name);
 exit_update_request:
 	rt_mutex_unlock(&msm_bus_adhoc_lock);
 
@@ -1328,7 +1340,7 @@ static int update_bw_context(struct msm_bus_client_handle *cl, u64 act_ab,
 	cl->cur_act_ab = act_ab;
 	cl->cur_slp_ib = slp_ib;
 	cl->cur_slp_ab = slp_ab;
-	trace_bus_update_request_end(cl->name);
+//	trace_bus_update_request_end(cl->name);
 exit_change_context:
 	rt_mutex_unlock(&msm_bus_adhoc_lock);
 	return ret;

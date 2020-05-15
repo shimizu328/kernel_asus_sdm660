@@ -32,16 +32,16 @@
 #include <linux/regulator/of_regulator.h>
 #include <linux/input/qpnp-power-on.h>
 #include <linux/power_supply.h>
-/* Huaqin add for ZQL1650-14 by lanshiming at 2018/01/17 start */
+
+#ifdef CONFIG_MACH_ASUS_X00TD
 #include <linux/timer.h>
 
 static struct timer_list tm;
-
 struct timer_data {
     struct qpnp_pon *pon;
     struct qpnp_pon_config *cfg;
 }timer_data;
-/* Huaqin add for ZQL1650-14 by lanshiming at 2018/01/17 end */
+#endif
 
 #define PMIC_VER_8941           0x01
 #define PMIC_VERSION_REG        0x0105
@@ -1281,7 +1281,7 @@ qpnp_pon_config_input(struct qpnp_pon *pon,  struct qpnp_pon_config *cfg)
 	return 0;
 }
 
-/* Huaqin add for ZQL1650-14 by lanshiming at 2018/1/17 start*/
+#ifdef CONFIG_MACH_ASUS_X00TD
 static int
 qpnp_config_reset_reg(struct qpnp_pon *pon, struct qpnp_pon_config *cfg)
 {
@@ -1360,7 +1360,7 @@ static void start_timer(struct qpnp_pon *pon,  struct qpnp_pon_config *cfg){
     tm.function = timer_func;
     add_timer(&tm);
 }
-/* Huaqin add for ZQL1650-14 by lanshiming at 2018/1/17 end*/
+#endif
 
 static int qpnp_pon_config_init(struct qpnp_pon *pon)
 {
@@ -1711,11 +1711,11 @@ static int qpnp_pon_config_init(struct qpnp_pon *pon)
 			dev_err(&pon->pdev->dev, "Unable to request-irq's\n");
 			goto unreg_input_dev;
 		}
-		/* Huaqin add for ZQL1650-14 by lanshiming at 2018/1/17 start*/
+#ifdef CONFIG_MACH_ASUS_X00TD
 		if(cfg->pon_type == PON_KPDPWR){
 			start_timer(pon, cfg);
 		}
-		/* Huaqin add for ZQL1650-14 by lanshiming at 2018/1/17 end*/
+#endif
 	}
 
 	device_init_wakeup(&pon->pdev->dev, 1);
@@ -2033,7 +2033,8 @@ static int read_gen2_pon_off_reason(struct qpnp_pon *pon, u16 *reason,
 					int *reason_index_offset)
 {
 	int rc;
-	int buf[2], reg;
+	u8 buf[2];
+	unsigned int reg, data;
 
 	rc = regmap_read(pon->regmap,
 			QPNP_PON_OFF_REASON(pon),
@@ -2047,13 +2048,13 @@ static int read_gen2_pon_off_reason(struct qpnp_pon *pon, u16 *reason,
 	if (reg & QPNP_GEN2_POFF_SEQ) {
 		rc = regmap_read(pon->regmap,
 				QPNP_POFF_REASON1(pon),
-				buf);
+				&data);
 		if (rc) {
 			dev_err(&pon->pdev->dev, "Unable to read POFF_REASON1 reg rc:%d\n",
 				rc);
 			return rc;
 		}
-		*reason = (u8)buf[0];
+		*reason = data;
 		*reason_index_offset = 0;
 	} else if (reg & QPNP_GEN2_FAULT_SEQ) {
 		rc = regmap_bulk_read(pon->regmap,
@@ -2064,18 +2065,18 @@ static int read_gen2_pon_off_reason(struct qpnp_pon *pon, u16 *reason,
 				rc);
 			return rc;
 		}
-		*reason = (u8)buf[0] | (u16)(buf[1] << 8);
+		*reason = buf[0] | ((u16)buf[1] << 8);
 		*reason_index_offset = POFF_REASON_FAULT_OFFSET;
 	} else if (reg & QPNP_GEN2_S3_RESET_SEQ) {
 		rc = regmap_read(pon->regmap,
 				QPNP_S3_RESET_REASON(pon),
-				buf);
+				&data);
 		if (rc) {
 			dev_err(&pon->pdev->dev, "Unable to read S3_RESET_REASON reg rc:%d\n",
 				rc);
 			return rc;
 		}
-		*reason = (u8)buf[0];
+		*reason = data;
 		*reason_index_offset = POFF_REASON_S3_RESET_OFFSET;
 	}
 

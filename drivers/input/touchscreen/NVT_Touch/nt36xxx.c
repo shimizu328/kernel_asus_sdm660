@@ -15,6 +15,8 @@
  * more details.
  *
  */
+
+#if 0
 /* Huaqin add by yuexinghan for ITO test start */
 #include <linux/init.h>
 #include <linux/cdev.h>
@@ -28,6 +30,7 @@
 #include <linux/list.h>
 #include <linux/device.h>
 /* Huaqin add by yuexinghan for ITO test end */
+#endif
 #include <linux/kernel.h>
 #include <linux/kobject.h>
 #include <linux/module.h>
@@ -44,6 +47,7 @@
 //Huaqin add for Reduce the bright screen time by qimaokang at 2018/4/20 start
 #include <linux/kthread.h>
 //Huaqin add for Reduce the bright screen time by qimaokang at 2018/4/20 end
+#include <linux/sched/rt.h>
 
 #if defined(CONFIG_FB)
 #include <linux/notifier.h>
@@ -207,7 +211,9 @@ extern int32_t nvt_mp_proc_init(void);
 
 struct nvt_ts_data *ts;
 
-static struct workqueue_struct *nvt_wq;
+static struct kthread_work work;
+static struct kthread_worker touch_worker;
+static struct task_struct *touch_worker_thread;
 
 #if BOOT_UPDATE_FIRMWARE
 static struct workqueue_struct *nvt_fwu_wq;
@@ -387,17 +393,18 @@ const uint16_t touch_key_array[TOUCH_KEY_NUM] = {
 
 #if WAKEUP_GESTURE
 /* Huaqin modify by yuexinghan for gesture mode 20171030 start */
-/* Huaqin modify  for TT1176710 by liunianliang at 2018/03/30 start */
-#define GESTURE_EVENT_C 		249
-#define GESTURE_EVENT_E 		250
-#define GESTURE_EVENT_S 		251
-#define GESTURE_EVENT_V 		252
-#define GESTURE_EVENT_W 		253
-#define GESTURE_EVENT_Z 		254
-/* Huaqin modify  for TT1176710 by liunianliang at 2018/03/30 end */
+#define GESTURE_EVENT_C 		KEY_TP_GESTURE_C
+#define GESTURE_EVENT_E 		KEY_TP_GESTURE_E
+#define GESTURE_EVENT_S 		KEY_TP_GESTURE_S
+#define GESTURE_EVENT_V 		KEY_TP_GESTURE_V
+#define GESTURE_EVENT_W 		KEY_TP_GESTURE_W
+#define GESTURE_EVENT_Z 		KEY_TP_GESTURE_Z
 /* Huaqin modify gesture keycode by yuexinghan 20171109 start */
-#define GESTURE_EVENT_SWIPE_UP 248
-#define GESTURE_EVENT_DOUBLE_CLICK 0x2f7
+#define GESTURE_EVENT_SWIPE_UP 255
+#define GESTURE_EVENT_SWIPE_DOWN 256
+#define GESTURE_EVENT_SWIPE_LEFT 257
+#define GESTURE_EVENT_SWIPE_RIGHT 258
+#define GESTURE_EVENT_DOUBLE_CLICK KEY_WAKEUP
 /* Huaqin modify gesture keycode by yuexinghan 20171109 end */
 
 const uint16_t gesture_key_array[] = {
@@ -411,6 +418,9 @@ const uint16_t gesture_key_array[] = {
 	GESTURE_EVENT_E,
 	GESTURE_EVENT_S,
 	GESTURE_EVENT_SWIPE_UP,
+	GESTURE_EVENT_SWIPE_DOWN,
+	GESTURE_EVENT_SWIPE_LEFT,
+	GESTURE_EVENT_SWIPE_RIGHT,
 	KEY_WAKEUP,
 	KEY_WAKEUP,
 	KEY_WAKEUP,
@@ -420,13 +430,9 @@ const uint16_t gesture_key_array[] = {
 
 static uint8_t bTouchIsAwake = 0;
 
-/* Huaqin add by yuexinghan for gesture mode 20171030 start */
 #if WAKEUP_GESTURE
-#define NVT_GESTURE_MODE "tpd_gesture"
-
 long gesture_mode = 0;
-static int allow_gesture = 0;
-static int screen_gesture = 1;
+static int allow_gesture = 1;
 static struct kobject *gesture_kobject;
 
 static ssize_t gesture_show(struct kobject *kobj, struct kobj_attribute *attr,
@@ -436,7 +442,7 @@ static ssize_t gesture_show(struct kobject *kobj, struct kobj_attribute *attr,
 }
 
 static ssize_t gesture_store(struct kobject *kobj, struct kobj_attribute *attr,
-                      char *buf, size_t count)
+                      const char *buf, size_t count)
 {
         sscanf(buf, "%du", &allow_gesture);
         return count;
@@ -445,38 +451,16 @@ static ssize_t gesture_store(struct kobject *kobj, struct kobj_attribute *attr,
 static struct kobj_attribute gesture_attribute = __ATTR(dclicknode, 0664, gesture_show,
                                                    gesture_store);
 
-static ssize_t screengesture_show(struct kobject *kobj, struct kobj_attribute *attr,
-                      char *buf)
-{
-        return sprintf(buf, "%d\n", screen_gesture);
-}
-
-static ssize_t screengesture_store(struct kobject *kobj, struct kobj_attribute *attr,
-                      char *buf, size_t count)
-{
-        sscanf(buf, "%du", &screen_gesture);
-        return count;
-}
-
-static struct kobj_attribute screengesture_attribute = __ATTR(gesture_node, 0664, screengesture_show,
-                                                   screengesture_store);
-
 int create_gesture_node(void) {
-	int error = 0, error2 = 0;
+	int error = 0;
+        NVT_LOG("[Nvt-ts] : Gesture Node initialized successfully \n");
 
         gesture_kobject = kobject_create_and_add("touchpanel",
                                                  kernel_kobj);
         if(!gesture_kobject)
                 return -ENOMEM;
 
-        NVT_LOG("[Nvt-ts] : Gesture Node initialized successfully \n");
-
         error = sysfs_create_file(gesture_kobject, &gesture_attribute.attr);
-        if (error) {
-                NVT_LOG("[Nvt-ts] : failed to create the gesture_node file in /sys/kernel/touchpanel \n");
-        }
-
-        error2 = sysfs_create_file(gesture_kobject, &screengesture_attribute.attr);
         if (error) {
                 NVT_LOG("[Nvt-ts] : failed to create the gesture_node file in /sys/kernel/touchpanel \n");
         }
@@ -487,66 +471,7 @@ int create_gesture_node(void) {
 void destroy_gesture(void) {
 	kobject_put(gesture_kobject);
 }
-
-static ssize_t nvt_gesture_mode_get_proc(struct file *file,
-                        char __user *buffer, size_t size, loff_t *ppos)
-{
-	char ptr[64];
-	unsigned int len = 0;
-	unsigned int ret = 0;
-
-	/* Huaqin modify for upper layer definition by yuexinghan 20171108 start */
-	//len = sprintf(ptr, "gesture_mode=0x%3X\n", (unsigned int)gesture_mode);
-	if (gesture_mode == 0) {
-		len = sprintf(ptr, "0\n");
-	} else {
-		len = sprintf(ptr, "1\n");
-	}
-	/* Huaqin modify for upper layer definition by yuexinghan 20171108 end */
-	ret = simple_read_from_buffer(buffer, size, ppos, ptr, (size_t)len);
-	return ret;
-}
-
-static ssize_t nvt_gesture_mode_set_proc(struct file *filp,
-                        const char __user *buffer, size_t count, loff_t *off)
-{
-	char msg[20];
-	int ret = 0;
-
-	ret = copy_from_user(msg, buffer, count);
-	if (ret) {
-		return -EFAULT;
-	}
-
-	ret = kstrtol(msg, 0, &gesture_mode);
-	if (!ret) {
-		/* Huaqin modify for upper layer definition by yuexinghan 20171108 start */
-		//gesture_mode = gesture_mode & 0x1FF;
-		if (gesture_mode == 0) {
-			gesture_mode = 0;
-		} else {
-			screen_gesture = 1;
-			allow_gesture = 1;
-			gesture_mode = 0x1FF;
-		}
-		/* Huaqin modify for upper layer definition by yuexinghan 20171108 end */
-	}
-	else {
-		NVT_ERR("set gesture mode failed\n");
-	}
-	NVT_LOG("gesture_mode = 0x%x\n", (unsigned int)gesture_mode);
-
-	return count;
-}
-
-static struct proc_dir_entry *nvt_gesture_mode_proc = NULL;
-static const struct file_operations gesture_mode_proc_ops = {
-	.owner = THIS_MODULE,
-	.read = nvt_gesture_mode_get_proc,
-	.write = nvt_gesture_mode_set_proc,
-};
 #endif
-/* Huaqin add by yuexinghan for gesture mode 20171030 end */
 
 
 /*******************************************************
@@ -560,7 +485,7 @@ int32_t CTP_I2C_READ(struct i2c_client *client, uint16_t address, uint8_t *buf, 
 {
 	struct i2c_msg msgs[2];
 	int32_t ret = -1;
-	int32_t retries = 0;
+	uint8_t retries;
 
 	msgs[0].flags = !I2C_M_RD;
 	msgs[0].addr  = address;
@@ -572,18 +497,13 @@ int32_t CTP_I2C_READ(struct i2c_client *client, uint16_t address, uint8_t *buf, 
 	msgs[1].len   = len - 1;
 	msgs[1].buf   = &buf[1];
 
-	while (retries < 5) {
+	for (retries = 0; retries < 5; retries++) {
 		ret = i2c_transfer(client->adapter, msgs, 2);
-		if (ret == 2)	break;
-		retries++;
+		if (ret == 2)
+			return ret;
 	}
 
-	if (unlikely(retries == 5)) {
-		NVT_ERR("error, ret=%d\n", ret);
-		ret = -EIO;
-	}
-
-	return ret;
+	return -EIO;
 }
 
 /*******************************************************
@@ -616,25 +536,20 @@ int32_t CTP_I2C_WRITE(struct i2c_client *client, uint16_t address, uint8_t *buf,
 {
 	struct i2c_msg msg;
 	int32_t ret = -1;
-	int32_t retries = 0;
+	uint8_t retries;
 
 	msg.flags = !I2C_M_RD;
 	msg.addr  = address;
 	msg.len   = len;
 	msg.buf   = buf;
 
-	while (retries < 5) {
+	for (retries = 0; retries < 5; retries++) {
 		ret = i2c_transfer(client->adapter, &msg, 1);
-		if (ret == 1)	break;
-		retries++;
+		if (ret == 1)
+			return ret;
 	}
 
-	if (unlikely(retries == 5)) {
-		NVT_ERR("error, ret=%d\n", ret);
-		ret = -EIO;
-	}
-
-	return ret;
+	return -EIO;
 }
 
 
@@ -1047,6 +962,7 @@ static int32_t nvt_flash_proc_init(void)
 }
 #endif
 
+#if 0
 /* Huaqin add by yuexinghan for ITO test start */
 /**********add ito test mode function  *******************/
 int nvt_TestResultLen=0;
@@ -1098,6 +1014,7 @@ int nvt_test_node_init(struct platform_device *tpinfo_device)
 }
 /*************************************************/
 /* Huaqin add by yuexinghan for ITO test end */
+#endif
 
 #if WAKEUP_GESTURE
 /* Huaqin add by yuexinghan for gesture mode 20171030 start */
@@ -1111,9 +1028,9 @@ int nvt_test_node_init(struct platform_device *tpinfo_device)
 #define ID_GESTURE_WORD_e			19
 #define ID_GESTURE_WORD_S			20
 #define ID_GESTURE_SLIDE_UP		21
-//#define GESTURE_SLIDE_DOWN		22
-//#define GESTURE_SLIDE_LEFT		23
-//#define GESTURE_SLIDE_RIGHT		24
+#define ID_GESTURE_SLIDE_DOWN		22
+#define ID_GESTURE_SLIDE_LEFT		23
+#define ID_GESTURE_SLIDE_RIGHT		24
 
 static struct wake_lock gestrue_wakelock;
 
@@ -1140,21 +1057,20 @@ void nvt_ts_wakeup_gesture_report(uint8_t gesture_id)
 	int is_double_tap = 0;
 
 	switch (gesture_id) {
-/* Huaqin add by yuexinghan for gesture mode 20171030 start */
 		case ID_GESTURE_WORD_C:
-			if (screen_gesture) {
+			if (allow_gesture) {
 				NVT_LOG("Gesture : Word-C.\n");
 				keycode = gesture_key_array[0];
 			}
 			break;
 		case ID_GESTURE_WORD_W:
-			if (screen_gesture) {
+			if (allow_gesture) {
 				NVT_LOG("Gesture : Word-W.\n");
 				keycode = gesture_key_array[1];
 			}
 			break;
 		case ID_GESTURE_WORD_V:
-			if (screen_gesture) {
+			if (allow_gesture) {
 				NVT_LOG("Gesture : Word-V.\n");
 				keycode = gesture_key_array[2];
 			}
@@ -1167,7 +1083,7 @@ void nvt_ts_wakeup_gesture_report(uint8_t gesture_id)
 			}
 			break;
 		case ID_GESTURE_WORD_Z:
-			if (screen_gesture) {
+			if (allow_gesture) {
 				NVT_LOG("Gesture : Word-Z.\n");
 				keycode = gesture_key_array[4];
 			}
@@ -1181,36 +1097,41 @@ void nvt_ts_wakeup_gesture_report(uint8_t gesture_id)
 			keycode = gesture_key_array[6];
 			break; */
 		case ID_GESTURE_WORD_e:
-			if (screen_gesture) {
+			if (allow_gesture) {
 				NVT_LOG("Gesture : Word-e.\n");
 				keycode = gesture_key_array[7];
 			}
 			break;
 		case ID_GESTURE_WORD_S:
-			if (screen_gesture) {
+			if (allow_gesture) {
 				NVT_LOG("Gesture : Word-S.\n");
 				keycode = gesture_key_array[8];
 			}
 			break;
 		case ID_GESTURE_SLIDE_UP:
-			if (screen_gesture) {
+			if (allow_gesture) {
 				NVT_LOG("Gesture : Slide UP.\n");
 				keycode = gesture_key_array[9];
 			}
 			break;
-		/* case GESTURE_SLIDE_DOWN:
-			NVT_LOG("Gesture : Slide DOWN.\n");
-			keycode = gesture_key_array[10];
+		case ID_GESTURE_SLIDE_DOWN:
+			if (allow_gesture) {
+				NVT_LOG("Gesture : Slide DOWN.\n");
+				keycode = gesture_key_array[10];
+			}
 			break;
-		case GESTURE_SLIDE_LEFT:
-			NVT_LOG("Gesture : Slide LEFT.\n");
-			keycode = gesture_key_array[11];
+		case ID_GESTURE_SLIDE_LEFT:
+			if (allow_gesture) {
+				NVT_LOG("Gesture : Slide LEFT.\n");
+				keycode = gesture_key_array[11];
+			}
 			break;
-		case GESTURE_SLIDE_RIGHT:
-			NVT_LOG("Gesture : Slide RIGHT.\n");
-			keycode = gesture_key_array[12];
-			break; */
-/* Huaqin add by yuexinghan for gesture mode 20171030 end */
+		case ID_GESTURE_SLIDE_RIGHT:
+			if (allow_gesture) {
+				NVT_LOG("Gesture : Slide RIGHT.\n");
+				keycode = gesture_key_array[12];
+			}
+			break;
 		default:
 			NVT_LOG("Still in gesture mode.\n");
 			break;
@@ -1218,9 +1139,9 @@ void nvt_ts_wakeup_gesture_report(uint8_t gesture_id)
 
 	if (keycode > 0 ) {
 		if (is_double_tap == 1) {
-			input_report_key(ts->input_dev, KEY_WAKEUP, 1);
+			input_report_key(ts->input_dev, GESTURE_EVENT_DOUBLE_CLICK, 1);
 			input_sync(ts->input_dev);
-			input_report_key(ts->input_dev, KEY_WAKEUP, 0);
+			input_report_key(ts->input_dev, GESTURE_EVENT_DOUBLE_CLICK, 0);
 			input_sync(ts->input_dev);
 			is_double_tap = 0;
 		} else {
@@ -1345,15 +1266,13 @@ Description:
 return:
 	n.a.
 *******************************************************/
-static void nvt_ts_work_func(struct work_struct *work)
+static void nvt_ts_work_func(struct kthread_work *work)
 {
 	int32_t ret = -1;
 	uint8_t point_data[POINT_DATA_LEN + 1] = {0};
 	uint32_t position = 0;
 	uint32_t input_x = 0;
 	uint32_t input_y = 0;
-	uint32_t input_w = 0;
-	uint32_t input_p = 0;
 	uint8_t input_id = 0;
 #if MT_PROTOCOL_B
 	uint8_t press_id[TOUCH_MAX_FINGER_NUM] = {0};
@@ -1362,17 +1281,9 @@ static void nvt_ts_work_func(struct work_struct *work)
 	int32_t finger_cnt = 0;
 	mutex_lock(&ts->lock);
 	ret = CTP_I2C_READ(ts->client, I2C_FW_Address, point_data, POINT_DATA_LEN + 1);
-	if (ret < 0) {
-		NVT_ERR("CTP_I2C_READ failed.(%d)\n", ret);
+	if (unlikely(ret < 0)) {
 		goto XFER_ERROR;
 	}
-/*
-	//--- dump I2C buf ---
-	for (i = 0; i < 10; i++) {
-		printk("%02X %02X %02X %02X %02X %02X  ", point_data[1+i*6], point_data[2+i*6], point_data[3+i*6], point_data[4+i*6], point_data[5+i*6], point_data[6+i*6]);
-	}
-	printk("\n");
-*/
 // Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  start
 #if NVT_TOUCH_ESD_PROTECT
 	//NVT_ERR("%02X %02X %02X\n", point_data[1], point_data[2], point_data[3]);	//DEBUG
@@ -1390,7 +1301,7 @@ static void nvt_ts_work_func(struct work_struct *work)
 // Huaqin add for ZQL1650-1072. by zhengwu.lu. at 2018/04/23  end
 #if WAKEUP_GESTURE
 	if (bTouchIsAwake == 0) {
-		input_id = (uint8_t)(point_data[1] >> 3);
+		input_id = (uint8_t) (point_data[1] >> 3);
 		nvt_ts_wakeup_gesture_report(input_id);
 // Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform start
 		//enable_irq(ts->client->irq);
@@ -1401,39 +1312,22 @@ static void nvt_ts_work_func(struct work_struct *work)
 	}
 #endif
 
-	finger_cnt = 0;
-
 	for (i = 0; i < ts->max_touch_num; i++) {
 		position = 1 + 6 * i;
-		input_id = (uint8_t)(point_data[position + 0] >> 3);
+		input_id = (uint8_t) (point_data[position] >> 3);
+
 		if ((input_id == 0) || (input_id > ts->max_touch_num))
 			continue;
 
-		if (((point_data[position] & 0x07) == 0x01) || ((point_data[position] & 0x07) == 0x02)) {	//finger down (enter & moving)
+		if (likely(((point_data[position] & 0x07) == 0x01) || ((point_data[position] & 0x07) == 0x02))) {
 // Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  start
 #if NVT_TOUCH_ESD_PROTECT
 		/* update interrupt timer */
 		irq_timer = jiffies;
 #endif
 // Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  end
-			input_x = (uint32_t)(point_data[position + 1] << 4) + (uint32_t) (point_data[position + 3] >> 4);
-			input_y = (uint32_t)(point_data[position + 2] << 4) + (uint32_t) (point_data[position + 3] & 0x0F);
-			if ((input_x < 0) || (input_y < 0))
-				continue;
-			if ((input_x > ts->abs_x_max) || (input_y > ts->abs_y_max))
-				continue;
-			input_w = (uint32_t)(point_data[position + 4]);
-			if (input_w == 0)
-				input_w = 1;
-			if (i < 2) {
-				input_p = (uint32_t)(point_data[position + 5]) + (uint32_t)(point_data[i + 63] << 8);
-				if (input_p > TOUCH_FORCE_NUM)
-					input_p = TOUCH_FORCE_NUM;
-			} else {
-				input_p = (uint32_t)(point_data[position + 5]);
-			}
-			if (input_p == 0)
-				input_p = 1;
+			input_x = (uint32_t) (point_data[position + 1] << 4) + (uint32_t) (point_data[position + 3] >> 4);
+			input_y = (uint32_t) (point_data[position + 2] << 4) + (uint32_t) (point_data[position + 3] & 0x0F);
 
 #if MT_PROTOCOL_B
 			press_id[input_id - 1] = 1;
@@ -1446,11 +1340,9 @@ static void nvt_ts_work_func(struct work_struct *work)
 
 			input_report_abs(ts->input_dev, ABS_MT_POSITION_X, input_x);
 			input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, input_y);
-			input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, input_w);
-			input_report_abs(ts->input_dev, ABS_MT_PRESSURE, input_p);
+			input_report_abs(ts->input_dev, ABS_MT_PRESSURE, TOUCH_FORCE_NUM);
 
-#if MT_PROTOCOL_B
-#else /* MT_PROTOCOL_B */
+#if !(MT_PROTOCOL_B)
 			input_mt_sync(ts->input_dev);
 #endif /* MT_PROTOCOL_B */
 
@@ -1461,10 +1353,9 @@ static void nvt_ts_work_func(struct work_struct *work)
 #if MT_PROTOCOL_B
 	for (i = 0; i < ts->max_touch_num; i++) {
 // Huaqin add for  ACTION_HOVER_ENTER 1176453. by zhengwu.lu. at 2018/04/10 For Platform start
-		if ((press_id[i] != 1) || (finger_cnt <= 0)) {
+		if ((likely(press_id[i] != 1)) || (finger_cnt <= 0)) {
 // Huaqin add for  ACTION_HOVER_ENTER 1176453. by zhengwu.lu. at 2018/04/10 For Platform end
 			input_mt_slot(ts->input_dev, i);
-			input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0);
 			input_report_abs(ts->input_dev, ABS_MT_PRESSURE, 0);
 			input_mt_report_slot_state(ts->input_dev, MT_TOOL_FINGER, false);
 		}
@@ -1519,11 +1410,11 @@ static irqreturn_t nvt_ts_irq_handler(int32_t irq, void *dev_id)
 
 #if WAKEUP_GESTURE
 	if (bTouchIsAwake == 0) {
-		wake_lock_timeout(&gestrue_wakelock, msecs_to_jiffies(5000));
+		wake_lock_timeout(&gestrue_wakelock, msecs_to_jiffies(700));
 	}
 #endif
 
-	queue_work(nvt_wq, &ts->nvt_work);
+	queue_kthread_work(&touch_worker, &work);
 
 	return IRQ_HANDLED;
 }
@@ -1618,6 +1509,7 @@ static int32_t nvt_ts_probe(struct i2c_client *client, const struct i2c_device_i
 #if ((TOUCH_KEY_NUM > 0) || WAKEUP_GESTURE)
 	int32_t retry = 0;
 #endif
+	struct sched_param param = { .sched_priority = MAX_RT_PRIO / 2 };
 
 	NVT_LOG("start\n");
 
@@ -1684,16 +1576,19 @@ static int32_t nvt_ts_probe(struct i2c_client *client, const struct i2c_device_i
 	mutex_unlock(&ts->lock);
 
 	//---create workqueue---
-	nvt_wq = create_workqueue("nvt_wq");
-	if (!nvt_wq) {
-		NVT_ERR("nvt_wq create workqueue failed\n");
-		ret = -ENOMEM;
-		goto err_create_nvt_wq_failed;
+	init_kthread_worker(&touch_worker);
+	touch_worker_thread = kthread_create(kthread_worker_fn,&touch_worker,"touch_worker_thread");
+	if (IS_ERR(touch_worker_thread)) {
+		pr_err("%s: Cannot set touch_worker_thread", __func__);
+		return -EFAULT;
 	}
-	INIT_WORK(&ts->nvt_work, nvt_ts_work_func);
+	sched_setscheduler(touch_worker_thread, SCHED_FIFO, &param);
 
+	wake_up_process(touch_worker_thread);
 
 	//---allocate input device---
+	init_kthread_work(&work, nvt_ts_work_func);
+
 	ts->input_dev = input_allocate_device();
 	if (ts->input_dev == NULL) {
 		NVT_ERR("allocate input device failed\n");
@@ -1743,7 +1638,7 @@ static int32_t nvt_ts_probe(struct i2c_client *client, const struct i2c_device_i
 	for (retry = 0; retry < (sizeof(gesture_key_array) / sizeof(gesture_key_array[0])); retry++) {
 		input_set_capability(ts->input_dev, EV_KEY, gesture_key_array[retry]);
 	}
-        __set_bit(KEY_WAKEUP, ts->input_dev->keybit);
+        __set_bit(GESTURE_EVENT_DOUBLE_CLICK, ts->input_dev->keybit);
 	__set_bit(GESTURE_EVENT_E, ts->input_dev->keybit);
 	__set_bit(GESTURE_EVENT_W, ts->input_dev->keybit);
 	__set_bit(GESTURE_EVENT_S, ts->input_dev->keybit);
@@ -1799,11 +1694,14 @@ static int32_t nvt_ts_probe(struct i2c_client *client, const struct i2c_device_i
 	queue_delayed_work(nvt_fwu_wq, &ts->nvt_fwu_work, msecs_to_jiffies(14000));
 #endif
 
+#if 0
 	/* Huaqin add by yuexinghan for ITO test start */
 	//--------add ito node
 	platform_device_register(&hwinfo_device);
 	nvt_test_node_init(&hwinfo_device);
 	/* Huaqin add by yuexinghan for ITO test end */
+#endif
+
 // Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  start
 /********************add protect , 20170908***********************/
 #if NVT_TOUCH_ESD_PROTECT
@@ -1839,16 +1737,9 @@ static int32_t nvt_ts_probe(struct i2c_client *client, const struct i2c_device_i
 	}
 #endif
 
-/* Huaqin add by yuexinghan for gesture mode 20171030 start */
 #if WAKEUP_GESTURE
 	er = create_gesture_node();
-	nvt_gesture_mode_proc = proc_create(NVT_GESTURE_MODE, 0644, NULL,
-				&gesture_mode_proc_ops);
-	if (!nvt_gesture_mode_proc) {
-		NVT_ERR("create proc tpd_gesture failed\n");
-	}
 #endif
-/* Huaqin add by yuexinghan for gesture mode 20171030 end */
 
 
 #if defined(CONFIG_FB)
@@ -1894,7 +1785,6 @@ err_int_request_failed:
 err_input_register_device_failed:
 	input_free_device(ts->input_dev);
 err_input_dev_alloc_failed:
-err_create_nvt_wq_failed:
 	mutex_destroy(&ts->lock);
 err_chipvertrim_failed:
 err_check_functionality_failed:
@@ -1989,8 +1879,7 @@ static int32_t nvt_ts_suspend(struct device *dev)
 // Huaqin add for esd check function. by zhengwu.lu. at 2018/2/28  end
 
 #if WAKEUP_GESTURE
-	/* Huaqin add by yuexinghan for gesture mode 20171030 start */
-	if (!allow_gesture && !screen_gesture) {
+	if (!allow_gesture) {
 // Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform start
 		//disable_irq(ts->client->irq);
 		nvt_irq_disable();
@@ -2012,7 +1901,6 @@ static int32_t nvt_ts_suspend(struct device *dev)
 
 		NVT_LOG("Enter gesture mode\n");
 	}
-	/* Huaqin add by yuexinghan for gesture mode 20171030 end */
 #else // WAKEUP_GESTURE
 // Huaqin add for ctp lose efficacy by zhengwu.lu. at 2018/04/18 For Platform start
 	//disable_irq(ts->client->irq);
@@ -2045,15 +1933,13 @@ static int32_t nvt_ts_suspend(struct device *dev)
 	msleep(50);
 
 	mutex_unlock(&ts->lock);
-// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  start
-	if (!allow_gesture && !screen_gesture) {
+	if (!allow_gesture) {
 	nvt_lcm_power_source_ctrl(data, 0);//disable vsp/vsn
 	NVT_LOG("sleep suspend end  disable vsp/vsn\n");
 	}
 	else{
 	NVT_LOG("gesture suspend end not disable vsp/vsn\n");
 	}
-// Huaqin add for vsp/vsn. by zhengwu.lu. at 2018/03/07  end
 
 	NVT_LOG("end\n");
 
@@ -2245,9 +2131,6 @@ static void __exit nvt_driver_exit(void)
 {
 	i2c_del_driver(&nvt_i2c_driver);
 	destroy_gesture();
-
-	if (nvt_wq)
-		destroy_workqueue(nvt_wq);
 
 #if BOOT_UPDATE_FIRMWARE
 	if (nvt_fwu_wq)

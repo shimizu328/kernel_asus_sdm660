@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2016-2019, The Linux Foundation. All rights reserved.
  * Copyright (C) 2013 Red Hat
  * Author: Rob Clark <robdclark@gmail.com>
  *
@@ -78,7 +78,12 @@ static ssize_t _sde_hdmi_debugfs_dump_info_read(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
-	len += snprintf(buf, SZ_4K, "name = %s\n", display->name);
+	len += snprintf(buf, SZ_1K, "name = %s\n", display->name);
+
+	if (len > count) {
+		kfree(buf);
+		return -ENOMEM;
+	}
 
 	if (copy_to_user(buff, buf, len)) {
 		kfree(buf);
@@ -591,6 +596,28 @@ static void sde_hdmi_tx_hdcp_cb(void *ptr, enum sde_hdcp_states status)
 	queue_delayed_work(hdmi->workq, &hdmi_ctrl->hdcp_cb_work, HZ/4);
 }
 
+static void sde_hdmi_tx_set_avmute(void *ptr)
+{
+	struct sde_hdmi *hdmi_ctrl = (struct sde_hdmi *)ptr;
+	struct hdmi *hdmi;
+
+	if (!hdmi_ctrl) {
+		DEV_ERR("%s: invalid input\n", __func__);
+		return;
+	}
+
+	hdmi = hdmi_ctrl->ctrl.ctrl;
+
+	/*
+	 * When we try to continuously re-auth there
+	 * is no need to enforce avmute for clear
+	 * content. Hence check the current encryption level
+	 * before enforcing avmute on authentication failure
+	 */
+	if (sde_hdmi_tx_is_encryption_set(hdmi_ctrl))
+		sde_hdmi_config_avmute(hdmi, true);
+}
+
 void sde_hdmi_hdcp_off(struct sde_hdmi *hdmi_ctrl)
 {
 
@@ -645,10 +672,6 @@ static void sde_hdmi_tx_hdcp_cb_work(struct work_struct *work)
 
 		hdmi_ctrl->auth_state = false;
 
-		if (sde_hdmi_tx_is_encryption_set(hdmi_ctrl) ||
-			!sde_hdmi_tx_is_stream_shareable(hdmi_ctrl))
-			rc = sde_hdmi_config_avmute(hdmi, true);
-
 		if (sde_hdmi_tx_is_panel_on(hdmi_ctrl)) {
 			pr_debug("%s: Reauthenticating\n", __func__);
 			if (hdmi_ctrl->hdcp_ops && hdmi_ctrl->hdcp_data) {
@@ -666,7 +689,7 @@ static void sde_hdmi_tx_hdcp_cb_work(struct work_struct *work)
 		}
 
 		break;
-		case HDCP_STATE_AUTH_FAIL_NOREAUTH:
+	case HDCP_STATE_AUTH_FAIL_NOREAUTH:
 		if (hdmi_ctrl->hdcp1_use_sw_keys && hdmi_ctrl->hdcp14_present) {
 			if (hdmi_ctrl->auth_state && !hdmi_ctrl->hdcp22_present)
 				hdcp1_set_enc(false);
@@ -1311,7 +1334,7 @@ static int _sde_hdmi_hpd_enable(struct sde_hdmi *sde_hdmi)
 		}
 	}
 
-	if (!sde_kms->splash_info.handoff) {
+	if (!sde_hdmi->cont_splash_enabled) {
 		sde_hdmi_set_mode(hdmi, false);
 		_sde_hdmi_phy_reset(hdmi);
 		sde_hdmi_set_mode(hdmi, true);
@@ -1339,11 +1362,73 @@ static int _sde_hdmi_hpd_enable(struct sde_hdmi *sde_hdmi)
 			HDMI_HPD_CTRL_ENABLE | hpd_ctrl);
 	spin_unlock_irqrestore(&hdmi->reg_lock, flags);
 
-	hdmi->hpd_off = false;
+	if (!sde_hdmi->non_pluggable)
+		hdmi->hpd_off = false;
 	SDE_DEBUG("enabled hdmi hpd\n");
 	return 0;
 
 fail:
+	return ret;
+}
+
+int sde_hdmi_core_enable(struct sde_hdmi *sde_hdmi)
+{
+	struct hdmi *hdmi = sde_hdmi->ctrl.ctrl;
+	const struct hdmi_platform_config *config = hdmi->config;
+	struct device *dev = &hdmi->pdev->dev;
+	int i, ret = 0;
+
+	for (i = 0; i < config->hpd_reg_cnt; i++) {
+		ret = regulator_enable(hdmi->hpd_regs[i]);
+		if (ret) {
+			SDE_ERROR("failed to enable hpd regulator: %s (%d)\n",
+					config->hpd_reg_names[i], ret);
+			goto err_regulator_enable;
+		}
+	}
+
+	ret = pinctrl_pm_select_default_state(dev);
+	if (ret) {
+		SDE_ERROR("pinctrl state chg failed: %d\n", ret);
+		goto err_pinctrl_state;
+	}
+
+	ret = _sde_hdmi_gpio_config(hdmi, true);
+	if (ret) {
+		SDE_ERROR("failed to configure GPIOs: %d\n", ret);
+		goto err_gpio_config;
+	}
+
+	for (i = 0; i < config->hpd_clk_cnt; i++) {
+		if (config->hpd_freq && config->hpd_freq[i]) {
+			ret = clk_set_rate(hdmi->hpd_clks[i],
+					config->hpd_freq[i]);
+			if (ret)
+				pr_warn("failed to set clk %s (%d)\n",
+						config->hpd_clk_names[i], ret);
+		}
+
+		ret = clk_prepare_enable(hdmi->hpd_clks[i]);
+		if (ret) {
+			SDE_ERROR("failed to enable hpd clk: %s (%d)\n",
+					config->hpd_clk_names[i], ret);
+			goto err_clk_prepare_enable;
+		}
+	}
+	sde_hdmi_set_mode(hdmi, true);
+	goto exit;
+
+err_clk_prepare_enable:
+	for (i = 0; i < config->hpd_clk_cnt; i++)
+		clk_disable_unprepare(hdmi->hpd_clks[i]);
+err_gpio_config:
+	_sde_hdmi_gpio_config(hdmi, false);
+err_pinctrl_state:
+	pinctrl_pm_select_sleep_state(dev);
+err_regulator_enable:
+	for (i = 0; i < config->hpd_reg_cnt; i++)
+		regulator_disable(hdmi->hpd_regs[i]);
+exit:
 	return ret;
 }
 
@@ -1353,14 +1438,19 @@ static void _sde_hdmi_hpd_disable(struct sde_hdmi *sde_hdmi)
 	const struct hdmi_platform_config *config = hdmi->config;
 	struct device *dev = &hdmi->pdev->dev;
 	int i, ret = 0;
+	unsigned long flags;
 
-	if (hdmi->hpd_off) {
+	if (!sde_hdmi->non_pluggable && hdmi->hpd_off) {
 		pr_warn("hdmi display hpd was already disabled\n");
 		return;
 	}
 
+	spin_lock_irqsave(&hdmi->reg_lock, flags);
 	/* Disable HPD interrupt */
+	hdmi_write(hdmi, REG_HDMI_HPD_CTRL, 0);
 	hdmi_write(hdmi, REG_HDMI_HPD_INT_CTRL, 0);
+	hdmi_write(hdmi, REG_HDMI_HPD_INT_STATUS, 0);
+	spin_unlock_irqrestore(&hdmi->reg_lock, flags);
 
 	sde_hdmi_set_mode(hdmi, false);
 
@@ -1381,7 +1471,9 @@ static void _sde_hdmi_hpd_disable(struct sde_hdmi *sde_hdmi)
 			pr_warn("failed to disable hpd regulator: %s (%d)\n",
 					config->hpd_reg_names[i], ret);
 	}
-	hdmi->hpd_off = true;
+
+	if (!sde_hdmi->non_pluggable)
+		hdmi->hpd_off = true;
 	SDE_DEBUG("disabled hdmi hpd\n");
 }
 
@@ -1411,6 +1503,12 @@ _sde_hdmi_update_hpd_state(struct sde_hdmi *hdmi_display, u64 state)
 		_sde_hdmi_hpd_disable(hdmi_display);
 
 	return rc;
+}
+
+void sde_hdmi_core_disable(struct sde_hdmi *sde_hdmi)
+{
+	/* HPD contains all the core clock and pwr */
+	_sde_hdmi_hpd_disable(sde_hdmi);
 }
 
 static void _sde_hdmi_cec_update_phys_addr(struct sde_hdmi *display)
@@ -1640,7 +1738,7 @@ static int _sde_hdmi_ext_disp_init(struct sde_hdmi *display)
 	const char *phandle = "qcom,msm_ext_disp";
 
 	if (!display) {
-		SDE_ERROR("[%s]Invalid params\n", display->name);
+		SDE_ERROR("Invalid params\n");
 		return -EINVAL;
 	}
 
@@ -1934,6 +2032,7 @@ struct drm_msm_ext_panel_hdr_metadata *hdr_meta)
 	u32 const version = 0x01;
 	u32 const length = 0x1a;
 	u32 const descriptor_id = 0x00;
+	u8 checksum;
 	struct hdmi *hdmi;
 	struct drm_connector *connector;
 
@@ -1950,11 +2049,33 @@ struct drm_msm_ext_panel_hdr_metadata *hdr_meta)
 		return;
 	}
 
+	/* Setup the line number to send the packet on */
+	packet_control = hdmi_read(hdmi, HDMI_GEN_PKT_CTRL);
+	packet_control |= BIT(16);
+	hdmi_write(hdmi, HDMI_GEN_PKT_CTRL, packet_control);
+
+	/* Setup the packet to be sent every frame */
+	packet_control = hdmi_read(hdmi, HDMI_GEN_PKT_CTRL);
+	packet_control |= BIT(1);
+	hdmi_write(hdmi, HDMI_GEN_PKT_CTRL, packet_control);
+
 	/* Setup Packet header and payload */
 	packet_header = type_code | (version << 8) | (length << 16);
 	hdmi_write(hdmi, HDMI_GENERIC0_HDR, packet_header);
 
-	packet_payload = (hdr_meta->eotf << 8);
+	/**
+	 * Checksum is not a mandatory field for
+	 * the HDR infoframe as per CEA-861-3 specification.
+	 * However some HDMI sinks still expect a
+	 * valid checksum to be included as part of
+	 * the infoframe. Hence compute and add
+	 * the checksum to improve sink interoperability
+	 * for our HDR solution on HDMI.
+	 */
+	checksum = sde_hdmi_hdr_set_chksum(hdr_meta);
+
+	packet_payload = (hdr_meta->eotf << 8) | checksum;
+
 	if (connector->hdr_metadata_type_one) {
 		packet_payload |= (descriptor_id << 16)
 			| (HDMI_GET_LSB(hdr_meta->display_primaries_x[0])
@@ -2008,14 +2129,20 @@ struct drm_msm_ext_panel_hdr_metadata *hdr_meta)
 	hdmi_write(hdmi, HDMI_GENERIC0_6, packet_payload);
 
 enable_packet_control:
-	/*
-	 * GENERIC0_LINE | GENERIC0_CONT | GENERIC0_SEND
-	 * Setup HDMI TX generic packet control
-	 * Enable this packet to transmit every frame
-	 * Enable HDMI TX engine to transmit Generic packet 1
-	 */
+
+	/* Flush the contents to the register */
 	packet_control = hdmi_read(hdmi, HDMI_GEN_PKT_CTRL);
-	packet_control |= BIT(0) | BIT(1) | BIT(2) | BIT(16);
+	packet_control |= BIT(2);
+	hdmi_write(hdmi, HDMI_GEN_PKT_CTRL, packet_control);
+
+	/* Clear the flush bit of the register */
+	packet_control = hdmi_read(hdmi, HDMI_GEN_PKT_CTRL);
+	packet_control &= ~BIT(2);
+	hdmi_write(hdmi, HDMI_GEN_PKT_CTRL, packet_control);
+
+	/* Start sending the packets*/
+	packet_control = hdmi_read(hdmi, HDMI_GEN_PKT_CTRL);
+	packet_control |= BIT(0);
 	hdmi_write(hdmi, HDMI_GEN_PKT_CTRL, packet_control);
 }
 
@@ -2368,6 +2495,7 @@ static int _sde_hdmi_init_hdcp(struct sde_hdmi *hdmi_ctrl)
 	hdcp_init_data.mutex         = &hdmi_ctrl->hdcp_mutex;
 	hdcp_init_data.workq         = hdmi->workq;
 	hdcp_init_data.notify_status = sde_hdmi_tx_hdcp_cb;
+	hdcp_init_data.avmute_sink   = sde_hdmi_tx_set_avmute;
 	hdcp_init_data.cb_data       = (void *)hdmi_ctrl;
 	hdcp_init_data.hdmi_tx_ver   = hdmi_ctrl->hdmi_tx_major_version;
 	hdcp_init_data.sec_access    = true;
@@ -2403,6 +2531,30 @@ end:
 	return rc;
 }
 
+int sde_hdmi_set_top_ctl(struct drm_connector *connector,
+			struct drm_display_mode *adj_mode, void *display)
+{
+	int rc = 0;
+	struct sde_hdmi *sde_hdmi = (struct sde_hdmi *)display;
+
+	if (!sde_hdmi) {
+		SDE_ERROR("sde_hdmi is NULL\n");
+		return -EINVAL;
+	}
+
+	if (sde_hdmi->display_topology) {
+		SDE_DEBUG("%s, set display topology %d\n",
+				__func__, sde_hdmi->display_topology);
+
+		msm_property_set_property(sde_connector_get_propinfo(connector),
+			sde_connector_get_property_values(connector->state),
+			CONNECTOR_PROP_TOPOLOGY_CONTROL,
+			sde_hdmi->display_topology);
+	}
+
+	return rc;
+}
+
 int sde_hdmi_connector_post_init(struct drm_connector *connector,
 		void *info,
 		void *display)
@@ -2430,10 +2582,17 @@ int sde_hdmi_connector_post_init(struct drm_connector *connector,
 	hdmi->connector = connector;
 	INIT_WORK(&sde_hdmi->hpd_work, _sde_hdmi_hotplug_work);
 
-	/* Enable HPD detection */
-	rc = _sde_hdmi_hpd_enable(sde_hdmi);
-	if (rc)
-		SDE_ERROR("failed to enable HPD: %d\n", rc);
+	if (sde_hdmi->non_pluggable) {
+		/* Disable HPD interrupt */
+		hdmi_write(hdmi, REG_HDMI_HPD_CTRL, 0);
+		hdmi_write(hdmi, REG_HDMI_HPD_INT_CTRL, 0);
+		hdmi_write(hdmi, REG_HDMI_HPD_INT_STATUS, 0);
+	} else {
+		/* Enable HPD detection if non_pluggable flag is not defined */
+		rc = _sde_hdmi_hpd_enable(sde_hdmi);
+		if (rc)
+			SDE_ERROR("failed to enable HPD: %d\n", rc);
+	}
 
 	_sde_hdmi_get_tx_version(sde_hdmi);
 
@@ -2848,7 +3007,6 @@ static int _sde_hdmi_parse_dt_modes(struct device_node *np,
 	u32 v_front_porch, v_pulse_width, v_back_porch;
 	bool h_active_high, v_active_high;
 	u32 flags = 0;
-
 	root_node = of_get_child_by_name(np, "qcom,customize-modes");
 	if (!root_node) {
 		root_node = of_parse_phandle(np, "qcom,customize-modes", 0);
@@ -2936,10 +3094,10 @@ static int _sde_hdmi_parse_dt_modes(struct device_node *np,
 		v_active_high = of_property_read_bool(node,
 						"qcom,mode-v-active-high");
 
-		rc = of_property_read_u32(node, "qcom,mode-refersh-rate",
+		rc = of_property_read_u32(node, "qcom,mode-refresh-rate",
 						&mode->vrefresh);
 		if (rc) {
-			SDE_ERROR("failed to read refersh-rate, rc=%d\n", rc);
+			SDE_ERROR("failed to read refresh-rate, rc=%d\n", rc);
 			goto fail;
 		}
 
@@ -2964,6 +3122,8 @@ static int _sde_hdmi_parse_dt_modes(struct device_node *np,
 			flags |= DRM_MODE_FLAG_PVSYNC;
 		else
 			flags |= DRM_MODE_FLAG_NVSYNC;
+
+		flags |= DRM_MODE_FLAG_SUPPORTS_RGB;
 		mode->flags = flags;
 
 		if (!rc) {
@@ -2995,6 +3155,9 @@ static int _sde_hdmi_parse_dt(struct device_node *node,
 {
 	int rc = 0;
 
+	const char *name;
+	u32 top = 0;
+
 	display->name = of_get_property(node, "label", NULL);
 
 	display->display_type = of_get_property(node,
@@ -3004,6 +3167,26 @@ static int _sde_hdmi_parse_dt(struct device_node *node,
 
 	display->non_pluggable = of_property_read_bool(node,
 						"qcom,non-pluggable");
+
+	rc = of_property_read_string(node, "qcom,display-topology-control",
+				&name);
+	if (rc) {
+		SDE_ERROR("unable to get qcom,display-topology-control,rc=%d\n",
+				rc);
+	} else {
+		SDE_DEBUG("%s qcom,display-topology-control = %s\n",
+				__func__, name);
+
+		if (!strcmp(name, "force-mixer"))
+			top = BIT(SDE_RM_TOPCTL_FORCE_MIXER);
+		else if (!strcmp(name, "force-tiling"))
+			top = BIT(SDE_RM_TOPCTL_FORCE_TILING);
+
+		display->display_topology = top;
+	}
+
+	display->skip_ddc = of_property_read_bool(node,
+						"qcom,skip_ddc");
 
 	rc = _sde_hdmi_parse_dt_modes(node, &display->mode_list,
 					&display->num_of_modes);
@@ -3127,7 +3310,6 @@ int sde_hdmi_drm_init(struct sde_hdmi *display, struct drm_encoder *enc)
 	struct msm_drm_private *priv = NULL;
 	struct hdmi *hdmi;
 	struct platform_device *pdev;
-	struct sde_kms *sde_kms;
 
 	DBG("");
 	if (!display || !display->drm_dev || !enc) {
@@ -3153,7 +3335,7 @@ int sde_hdmi_drm_init(struct sde_hdmi *display, struct drm_encoder *enc)
 
 	hdmi_audio_infoframe_init(&hdmi->audio.infoframe);
 
-	hdmi->bridge = sde_hdmi_bridge_init(hdmi);
+	hdmi->bridge = sde_hdmi_bridge_init(hdmi, display);
 	if (IS_ERR(hdmi->bridge)) {
 		rc = PTR_ERR(hdmi->bridge);
 		SDE_ERROR("failed to create HDMI bridge: %d\n", rc);
@@ -3193,8 +3375,7 @@ int sde_hdmi_drm_init(struct sde_hdmi *display, struct drm_encoder *enc)
 	 * clocks. This can skip the clock disabling operation in
 	 * clock_late_init when finding clk.count == 1.
 	 */
-	sde_kms = to_sde_kms(priv->kms);
-	if (sde_kms->splash_info.handoff) {
+	if (display->cont_splash_enabled) {
 		sde_hdmi_bridge_power_on(hdmi->bridge);
 		hdmi->power_on = true;
 	}

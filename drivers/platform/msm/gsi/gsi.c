@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,7 +21,7 @@
 #include "gsi.h"
 #include "gsi_reg.h"
 
-#define GSI_CMD_TIMEOUT 5000
+#define GSI_CMD_TIMEOUT (5*HZ)
 #define GSI_STOP_CMD_TIMEOUT_MS 20
 #define GSI_MAX_CH_LOW_WEIGHT 15
 #define GSI_MHI_ER_START 10
@@ -1082,13 +1082,14 @@ int gsi_alloc_evt_ring(struct gsi_evt_ring_props *props, unsigned long dev_hdl,
 	uint32_t val;
 	struct gsi_evt_ctx *ctx;
 	int res;
-	int ee = gsi_ctx->per.ee;
+	int ee;
 	unsigned long flags;
 
 	if (!gsi_ctx) {
 		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
 		return -GSI_STATUS_NODEV;
 	}
+	ee = gsi_ctx->per.ee;
 
 	if (!props || !evt_ring_hdl || dev_hdl != (uintptr_t)gsi_ctx) {
 		GSIERR("bad params props=%p dev_hdl=0x%lx evt_ring_hdl=%p\n",
@@ -1131,8 +1132,7 @@ int gsi_alloc_evt_ring(struct gsi_evt_ring_props *props, unsigned long dev_hdl,
 			GSI_EE_n_EV_CH_CMD_OPCODE_BMSK));
 	gsi_writel(val, gsi_ctx->base +
 			GSI_EE_n_EV_CH_CMD_OFFS(ee));
-	res = wait_for_completion_timeout(&ctx->compl,
-			msecs_to_jiffies(GSI_CMD_TIMEOUT));
+	res = wait_for_completion_timeout(&ctx->compl, GSI_CMD_TIMEOUT);
 	if (res == 0) {
 		GSIERR("evt_id=%lu timed out\n", evt_id);
 		if (!props->evchid_valid)
@@ -1257,8 +1257,7 @@ int gsi_dealloc_evt_ring(unsigned long evt_ring_hdl)
 			 GSI_EE_n_EV_CH_CMD_OPCODE_BMSK));
 	gsi_writel(val, gsi_ctx->base +
 			GSI_EE_n_EV_CH_CMD_OFFS(gsi_ctx->per.ee));
-	res = wait_for_completion_timeout(&ctx->compl,
-			msecs_to_jiffies(GSI_CMD_TIMEOUT));
+	res = wait_for_completion_timeout(&ctx->compl, GSI_CMD_TIMEOUT);
 	if (res == 0) {
 		GSIERR("evt_id=%lu timed out\n", evt_ring_hdl);
 		mutex_unlock(&gsi_ctx->mlock);
@@ -1382,8 +1381,7 @@ int gsi_reset_evt_ring(unsigned long evt_ring_hdl)
 			 GSI_EE_n_EV_CH_CMD_OPCODE_BMSK));
 	gsi_writel(val, gsi_ctx->base +
 			GSI_EE_n_EV_CH_CMD_OFFS(gsi_ctx->per.ee));
-	res = wait_for_completion_timeout(&ctx->compl,
-			msecs_to_jiffies(GSI_CMD_TIMEOUT));
+	res = wait_for_completion_timeout(&ctx->compl, GSI_CMD_TIMEOUT);
 	if (res == 0) {
 		GSIERR("evt_id=%lu timed out\n", evt_ring_hdl);
 		mutex_unlock(&gsi_ctx->mlock);
@@ -1608,7 +1606,7 @@ int gsi_alloc_channel(struct gsi_chan_props *props, unsigned long dev_hdl,
 	struct gsi_chan_ctx *ctx;
 	uint32_t val;
 	int res;
-	int ee = gsi_ctx->per.ee;
+	int ee;
 	enum gsi_ch_cmd_opcode op = GSI_CH_ALLOCATE;
 	uint8_t erindex;
 	void **user_data;
@@ -1617,6 +1615,7 @@ int gsi_alloc_channel(struct gsi_chan_props *props, unsigned long dev_hdl,
 		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
 		return -GSI_STATUS_NODEV;
 	}
+	ee = gsi_ctx->per.ee;
 
 	if (!props || !chan_hdl || dev_hdl != (uintptr_t)gsi_ctx) {
 		GSIERR("bad params props=%p dev_hdl=0x%lx chan_hdl=%p\n",
@@ -1672,8 +1671,7 @@ int gsi_alloc_channel(struct gsi_chan_props *props, unsigned long dev_hdl,
 			 GSI_EE_n_GSI_CH_CMD_OPCODE_BMSK));
 	gsi_writel(val, gsi_ctx->base +
 			GSI_EE_n_GSI_CH_CMD_OFFS(ee));
-	res = wait_for_completion_timeout(&ctx->compl,
-			msecs_to_jiffies(GSI_CMD_TIMEOUT));
+	res = wait_for_completion_timeout(&ctx->compl, GSI_CMD_TIMEOUT);
 	if (res == 0) {
 		GSIERR("chan_hdl=%u timed out\n", props->ch_id);
 		mutex_unlock(&gsi_ctx->mlock);
@@ -1844,8 +1842,7 @@ int gsi_start_channel(unsigned long chan_hdl)
 		 GSI_EE_n_GSI_CH_CMD_OPCODE_BMSK));
 	gsi_writel(val, gsi_ctx->base +
 			GSI_EE_n_GSI_CH_CMD_OFFS(gsi_ctx->per.ee));
-	res = wait_for_completion_timeout(&ctx->compl,
-			msecs_to_jiffies(GSI_CMD_TIMEOUT));
+	res = wait_for_completion_timeout(&ctx->compl, GSI_CMD_TIMEOUT);
 	if (res == 0) {
 		GSIERR("chan_hdl=%lu timed out\n", chan_hdl);
 		mutex_unlock(&gsi_ctx->mlock);
@@ -2051,8 +2048,7 @@ reset:
 		 GSI_EE_n_GSI_CH_CMD_OPCODE_BMSK));
 	gsi_writel(val, gsi_ctx->base +
 			GSI_EE_n_GSI_CH_CMD_OFFS(gsi_ctx->per.ee));
-	res = wait_for_completion_timeout(&ctx->compl,
-			msecs_to_jiffies(GSI_CMD_TIMEOUT));
+	res = wait_for_completion_timeout(&ctx->compl, GSI_CMD_TIMEOUT);
 	if (res == 0) {
 		GSIERR("chan_hdl=%lu timed out\n", chan_hdl);
 		mutex_unlock(&gsi_ctx->mlock);
@@ -2119,8 +2115,7 @@ int gsi_dealloc_channel(unsigned long chan_hdl)
 		 GSI_EE_n_GSI_CH_CMD_OPCODE_BMSK));
 	gsi_writel(val, gsi_ctx->base +
 			GSI_EE_n_GSI_CH_CMD_OFFS(gsi_ctx->per.ee));
-	res = wait_for_completion_timeout(&ctx->compl,
-			msecs_to_jiffies(GSI_CMD_TIMEOUT));
+	res = wait_for_completion_timeout(&ctx->compl, GSI_CMD_TIMEOUT);
 	if (res == 0) {
 		GSIERR("chan_hdl=%lu timed out\n", chan_hdl);
 		mutex_unlock(&gsi_ctx->mlock);
@@ -2215,12 +2210,13 @@ int gsi_query_channel_info(unsigned long chan_hdl,
 	unsigned long flags;
 	uint64_t rp;
 	uint64_t wp;
-	int ee = gsi_ctx->per.ee;
+	int ee;
 
 	if (!gsi_ctx) {
 		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
 		return -GSI_STATUS_NODEV;
 	}
+	ee = gsi_ctx->per.ee;
 
 	if (chan_hdl >= gsi_ctx->max_ch || !info) {
 		GSIERR("bad params chan_hdl=%lu info=%p\n", chan_hdl, info);
@@ -2285,12 +2281,13 @@ int gsi_is_channel_empty(unsigned long chan_hdl, bool *is_empty)
 	unsigned long flags;
 	uint64_t rp;
 	uint64_t wp;
-	int ee = gsi_ctx->per.ee;
+	int ee;
 
 	if (!gsi_ctx) {
 		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
 		return -GSI_STATUS_NODEV;
 	}
+	ee = gsi_ctx->per.ee;
 
 	if (chan_hdl >= gsi_ctx->max_ch || !is_empty) {
 		GSIERR("bad params chan_hdl=%lu is_empty=%p\n",
@@ -2471,13 +2468,14 @@ int gsi_poll_channel(unsigned long chan_hdl,
 {
 	struct gsi_chan_ctx *ctx;
 	uint64_t rp;
-	int ee = gsi_ctx->per.ee;
+	int ee;
 	unsigned long flags;
 
 	if (!gsi_ctx) {
 		pr_err("%s:%d gsi context not allocated\n", __func__, __LINE__);
 		return -GSI_STATUS_NODEV;
 	}
+	ee = gsi_ctx->per.ee;
 
 	if (chan_hdl >= gsi_ctx->max_ch || !notify) {
 		GSIERR("bad params chan_hdl=%lu notify=%p\n", chan_hdl, notify);
@@ -2561,16 +2559,15 @@ int gsi_config_channel_mode(unsigned long chan_hdl, enum gsi_chan_mode mode)
 	if (curr == GSI_CHAN_MODE_CALLBACK &&
 			mode == GSI_CHAN_MODE_POLL) {
 		__gsi_config_ieob_irq(gsi_ctx->per.ee, 1 << ctx->evtr->id, 0);
-		atomic_set(&ctx->poll_mode, mode);
 		ctx->stats.callback_to_poll++;
 	}
 
 	if (curr == GSI_CHAN_MODE_POLL &&
 			mode == GSI_CHAN_MODE_CALLBACK) {
-		atomic_set(&ctx->poll_mode, mode);
 		__gsi_config_ieob_irq(gsi_ctx->per.ee, 1 << ctx->evtr->id, ~0);
 		ctx->stats.poll_to_callback++;
 	}
+	atomic_set(&ctx->poll_mode, mode);
 	spin_unlock_irqrestore(&gsi_ctx->slock, flags);
 
 	return GSI_STATUS_SUCCESS;

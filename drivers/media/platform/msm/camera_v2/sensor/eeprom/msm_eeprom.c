@@ -54,13 +54,15 @@ static int msm_get_read_mem_size
 			return -EINVAL;
 		}
 		for (i = 0; i < eeprom_map->memory_map_size; i++) {
-			/*Huaqin add third supply front camera hi846 tsp by lizihao at 2018/04/10 start*/
 			if (eeprom_map->mem_settings[i].i2c_operation ==
+#ifdef CONFIG_MACH_ASUS_X00T
 				MSM_CAM_READ || eeprom_map->mem_settings[i].i2c_operation ==
 				MSM_CAM_SINGLE_LOOP_READ ) {
+#else
+				MSM_CAM_READ) {
+#endif
 				size += eeprom_map->mem_settings[i].reg_data;
 			}
-			/*Huaqin add third supply front camera hi846 tsp by lizihao at 2018/04/10 end*/
 		}
 	}
 	CDBG("Total Data Size: %d\n", size);
@@ -409,7 +411,7 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 				memptr += eeprom_map->mem_settings[i].reg_data;
 			}
 			break;
-			/*Huaqin add third supply front camera hi846 tsp by lizihao at 2018/04/10 start*/
+#ifdef CONFIG_MACH_ASUS_X00T
 			case MSM_CAM_SINGLE_LOOP_READ: {
 				uint16_t m;
 				uint16_t read_val = 0;
@@ -431,7 +433,7 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 				msleep(eeprom_map->mem_settings[i].delay);
 			}
 			break;
-			/*Huaqin add third supply front camera hi846 tsp by lizihao at 2018/04/10 end*/
+#endif
 			default:
 				pr_err("%s: %d Invalid i2c operation LC:%d\n",
 					__func__, __LINE__, i);

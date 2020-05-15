@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -293,10 +293,8 @@ int kgsl_snapshot_get_object(struct kgsl_snapshot *snapshot,
 
 	entry = kgsl_sharedmem_find(process, gpuaddr);
 
-	if (entry == NULL) {
-		KGSL_CORE_ERR("Unable to find GPU buffer 0x%016llX\n", gpuaddr);
+	if (entry == NULL)
 		return -EINVAL;
-	}
 
 	/* We can't freeze external memory, because we don't own it */
 	if (entry->memdesc.flags & KGSL_MEMFLAGS_USERMEM_MASK)
@@ -851,7 +849,7 @@ static ssize_t snapshot_crashdumper_store(struct kgsl_device *device,
 	int ret;
 
 	if (device && count > 0)
-		device->snapshot_crashdumper = 1;
+		device->snapshot_crashdumper = 0;
 
 	ret = kgsl_sysfs_store(buf, &val);
 
@@ -969,7 +967,7 @@ int kgsl_device_snapshot_init(struct kgsl_device *device)
 	device->snapshot = NULL;
 	device->snapshot_faultcount = 0;
 	device->force_panic = 0;
-	device->snapshot_crashdumper = 1;
+	device->snapshot_crashdumper = 0;
 
 	ret = kobject_init_and_add(&device->snapshot_kobj, &ktype_snapshot,
 		&device->dev->kobj, "snapshot");

@@ -1,4 +1,4 @@
-/* Copyright (c) 2009-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2009-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -433,6 +433,39 @@ static int mdss_debug_base_release(struct inode *inode, struct file *file)
 	return 0;
 }
 
+/**
+ * mdss_debug_base_is_valid_range - verify if requested memory range is valid
+ * @off: address offset in bytes
+ * @cnt: memory size in bytes
+ * Return: true if valid; false otherwise
+ */
+static bool mdss_debug_base_is_valid_range(u32 off, u32 cnt)
+{
+	struct mdss_data_type *mdata = mdss_mdp_get_mdata();
+	struct mdss_debug_data *mdd = mdata->debug_inf.debug_data;
+	struct range_dump_node *node;
+	struct mdss_debug_base *base;
+
+	pr_debug("check offset=0x%x cnt=0x%x\n", off, cnt);
+
+	list_for_each_entry(base, &mdd->base_list, head) {
+		list_for_each_entry(node, &base->dump_list, head) {
+			pr_debug("%s: start=0x%x end=0x%x\n", node->range_name,
+					node->offset.start, node->offset.end);
+
+			if (node->offset.start <= off
+					&& off <= node->offset.end
+					&& off + cnt <= node->offset.end) {
+				pr_debug("valid range requested\n");
+				return true;
+			}
+		}
+	}
+
+	pr_err("invalid range requested\n");
+	return false;
+}
+
 static ssize_t mdss_debug_base_offset_write(struct file *file,
 		    const char __user *user_buf, size_t count, loff_t *ppos)
 {
@@ -452,7 +485,8 @@ static ssize_t mdss_debug_base_offset_write(struct file *file,
 
 	buf[count] = 0;	/* end of string */
 
-	sscanf(buf, "%5x %x", &off, &cnt);
+	if (sscanf(buf, "%5x %x", &off, &cnt) != 2)
+		return -EFAULT;
 
 	if (off % sizeof(u32))
 		return -EINVAL;
@@ -462,6 +496,9 @@ static ssize_t mdss_debug_base_offset_write(struct file *file,
 
 	if (cnt > (dbg->max_offset - off))
 		cnt = dbg->max_offset - off;
+
+	if (!mdss_debug_base_is_valid_range(off, cnt))
+		return -EINVAL;
 
 	mutex_lock(&mdss_debug_lock);
 	dbg->off = off;
@@ -1413,6 +1450,9 @@ static inline struct mdss_mdp_misr_map *mdss_misr_get_map(u32 block_id,
 					case MDSS_MDP_INTF2:
 						block_id = DISPLAY_MISR_DSI1;
 						break;
+					case MDSS_MDP_INTF3:
+						block_id = DISPLAY_MISR_HDMI;
+						break;
 					default:
 						pr_err("Unmatch INTF for Dual LM single display configuration, INTF:%d\n",
 								ctl->intf_num);
@@ -1826,7 +1866,7 @@ void mdss_misr_crc_collect(struct mdss_data_type *mdata, int block_id,
 
 	pr_debug("$$ Vsync Count = %d, CRC=0x%x Indx = %d$$\n",
 		vsync_count, crc, map->crc_index);
-	trace_mdp_misr_crc(block_id, vsync_count, crc);
+//	trace_mdp_misr_crc(block_id, vsync_count, crc);
 
 	if (MAX_VSYNC_COUNT == vsync_count) {
 		pr_debug("RESET vsync_count(%d)\n", vsync_count);

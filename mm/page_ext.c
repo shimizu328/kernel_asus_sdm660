@@ -187,7 +187,7 @@ struct page_ext *lookup_page_ext(struct page *page)
 	 * This check is also necessary for ensuring page poisoning
 	 * works as expected when enabled
 	 */
-	if (!section->page_ext)
+	if (!section || !section->page_ext)
 		return NULL;
 	return section->page_ext + pfn;
 }
@@ -258,6 +258,7 @@ static void free_page_ext(void *addr)
 		table_size = sizeof(struct page_ext) * PAGES_PER_SECTION;
 
 		BUG_ON(PageReserved(page));
+		kmemleak_free(addr);
 		free_pages_exact(addr, table_size);
 	}
 }

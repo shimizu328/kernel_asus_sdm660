@@ -51,16 +51,22 @@ enum pon_power_off_type {
 };
 
 enum pon_restart_reason {
+	/* 0 ~ 31 for common defined features */
 	PON_RESTART_REASON_UNKNOWN		= 0x00,
 	PON_RESTART_REASON_RECOVERY		= 0x01,
 	PON_RESTART_REASON_BOOTLOADER		= 0x02,
 	PON_RESTART_REASON_RTC			= 0x03,
+#if 0
 	PON_RESTART_REASON_DMVERITY_CORRUPTED	= 0x04,
+#endif
 	PON_RESTART_REASON_DMVERITY_ENFORCE	= 0x05,
 	PON_RESTART_REASON_KEYS_CLEAR		= 0x06,
-	/* Huaqin add for ZQL1650-1168 by liunianliang at 2018/04/18 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 	PON_RESTART_REASON_ASUS_UNLOCK		= 0x08,
-	/* Huaqin add for ZQL1650-1168 by liunianliang at 2018/04/18 end */
+#endif
+	/* 32 ~ 63 for OEMs/ODMs secific features */
+	PON_RESTART_REASON_OEM_MIN		= 0x20,
+	PON_RESTART_REASON_OEM_MAX		= 0x3f,
 };
 
 #ifdef CONFIG_INPUT_QPNP_POWER_ON

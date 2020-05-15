@@ -409,8 +409,8 @@ int msm_bus_dbg_rec_transaction(const struct msm_bus_client_handle *pdata,
 	cldata->size = i;
 	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 
-	trace_bus_update_request((int)ts.tv_sec, (int)ts.tv_nsec,
-		pdata->name, pdata->mas, pdata->slv, ab, ib);
+//	trace_bus_update_request((int)ts.tv_sec, (int)ts.tv_nsec,
+//		pdata->name, pdata->mas, pdata->slv, ab, ib);
 
 	return i;
 }
@@ -530,13 +530,13 @@ static int msm_bus_dbg_fill_cl_buffer(const struct msm_bus_scale_pdata *pdata,
 			pdata->usecase[index].vectors[j].ib);
 	i += scnprintf(buf + i, MAX_BUFF_SIZE - i, "\n");
 
-	for (j = 0; j < pdata->usecase->num_paths; j++)
-		trace_bus_update_request((int)ts.tv_sec, (int)ts.tv_nsec,
-		pdata->name,
-		pdata->usecase[index].vectors[j].src,
-		pdata->usecase[index].vectors[j].dst,
-		pdata->usecase[index].vectors[j].ab,
-		pdata->usecase[index].vectors[j].ib);
+//	for (j = 0; j < pdata->usecase->num_paths; j++)
+//		trace_bus_update_request((int)ts.tv_sec, (int)ts.tv_nsec,
+//		pdata->name,
+//		pdata->usecase[index].vectors[j].src,
+//		pdata->usecase[index].vectors[j].dst,
+//		pdata->usecase[index].vectors[j].ab,
+//		pdata->usecase[index].vectors[j].ib);
 
 	cldata->index = index;
 	cldata->size = i;
@@ -577,7 +577,6 @@ static ssize_t  msm_bus_dbg_update_request_write(struct file *file,
 	list_for_each_entry(cldata, &cl_list, list) {
 		if (strnstr(chid, cldata->pdata->name, cnt)) {
 			found = 1;
-			cldata = cldata;
 			strsep(&chid, " ");
 			if (chid) {
 				ret = kstrtoul(chid, 10, &index);
@@ -773,7 +772,7 @@ static int msm_bus_dbg_dump_clients_open(struct inode *inode, struct file *file)
 static ssize_t msm_bus_dbg_dump_clients_read(struct file *file,
 	char __user *buf, size_t count, loff_t *ppos)
 {
-	int j, cnt;
+	int __maybe_unused j, cnt;
 	char msg[50];
 	struct msm_bus_cldata *cldata = NULL;
 
@@ -786,17 +785,17 @@ static ssize_t msm_bus_dbg_dump_clients_read(struct file *file,
 	list_for_each_entry(cldata, &cl_list, list) {
 		if (IS_ERR_OR_NULL(cldata->pdata))
 			continue;
-		for (j = 0; j < cldata->pdata->usecase->num_paths; j++) {
-			if (cldata->index == -1)
-				continue;
-			trace_bus_client_status(
-			cldata->pdata->name,
-			cldata->pdata->usecase[cldata->index].vectors[j].src,
-			cldata->pdata->usecase[cldata->index].vectors[j].dst,
-			cldata->pdata->usecase[cldata->index].vectors[j].ab,
-			cldata->pdata->usecase[cldata->index].vectors[j].ib,
-			cldata->pdata->active_only);
-		}
+//		for (j = 0; j < cldata->pdata->usecase->num_paths; j++) {
+//			if (cldata->index == -1)
+//				continue;
+//			trace_bus_client_status(
+//			cldata->pdata->name,
+//			cldata->pdata->usecase[cldata->index].vectors[j].src,
+//			cldata->pdata->usecase[cldata->index].vectors[j].dst,
+//			cldata->pdata->usecase[cldata->index].vectors[j].ab,
+//			cldata->pdata->usecase[cldata->index].vectors[j].ib,
+//			cldata->pdata->active_only);
+//		}
 	}
 	rt_mutex_unlock(&msm_bus_dbg_cllist_lock);
 exit_dump_clients_read:

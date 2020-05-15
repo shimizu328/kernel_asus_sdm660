@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -32,6 +32,7 @@
 #include <trace/events/power.h>
 #include "governor.h"
 #include "governor_bw_hwmon.h"
+#include <linux/display_state.h>
 
 #define NUM_MBPS_ZONES		10
 struct hwmon_node {
@@ -52,6 +53,7 @@ struct hwmon_node {
 	unsigned int low_power_io_percent;
 	unsigned int low_power_delay;
 	unsigned int mbps_zones[NUM_MBPS_ZONES];
+	unsigned int screen_off_max_freq;
 
 	unsigned long prev_ab;
 	unsigned long *dev_ab;
@@ -175,7 +177,7 @@ static DEVICE_ATTR(__attr, 0644, show_list_##__attr, store_list_##__attr)
 #define MAX_MS	500U
 
 /* Returns MBps of read/writes for the sampling window. */
-static unsigned int bytes_to_mbps(long long bytes, unsigned int us)
+static unsigned long bytes_to_mbps(unsigned long long bytes, unsigned int us)
 {
 	bytes *= USEC_PER_SEC;
 	do_div(bytes, us);
@@ -233,10 +235,10 @@ static int __bw_hwmon_sw_sample_end(struct bw_hwmon *hwmon)
 	node->wake = wake;
 	node->sampled = true;
 
-	trace_bw_hwmon_meas(dev_name(df->dev.parent),
-				mbps,
-				us,
-				wake);
+//	trace_bw_hwmon_meas(dev_name(df->dev.parent),
+//				mbps,
+//				us,
+//				wake);
 
 	return wake;
 }
@@ -269,10 +271,10 @@ static int __bw_hwmon_hw_sample_end(struct bw_hwmon *hwmon)
 	node->wake = wake;
 	node->sampled = true;
 
-	trace_bw_hwmon_meas(dev_name(df->dev.parent),
-				mbps,
-				node->sample_ms * USEC_PER_MSEC,
-				wake);
+//	trace_bw_hwmon_meas(dev_name(df->dev.parent),
+//				mbps,
+//				node->sample_ms * USEC_PER_MSEC,
+//				wake);
 
 	return 1;
 }
@@ -317,7 +319,7 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 	unsigned long meas_mbps_zone;
 	unsigned long hist_lo_tol, hyst_lo_tol;
 	struct bw_hwmon *hw = node->hw;
-	unsigned int new_bw, io_percent;
+	unsigned int new_bw, io_percent, og_freq;
 	ktime_t ts;
 	unsigned int ms = 0;
 
@@ -485,11 +487,22 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 		*ab = roundup(new_bw, node->bw_step);
 
 	*freq = (new_bw * 100) / io_percent;
-	trace_bw_hwmon_update(dev_name(node->hw->df->dev.parent),
-				new_bw,
-				*freq,
-				hw->up_wake_mbps,
-				hw->down_wake_mbps);
+	bool display_on = is_display_on();
+	og_freq = *freq;
+
+	if (!display_on && *freq > node->screen_off_max_freq) {
+		*freq = node->screen_off_max_freq;
+	}
+
+	if (*freq == 0) {
+		*freq = og_freq;
+	}
+
+//	trace_bw_hwmon_update(dev_name(node->hw->df->dev.parent),
+//				new_bw,
+//				*freq,
+//				hw->up_wake_mbps,
+//				hw->down_wake_mbps);
 	return req_mbps;
 }
 
@@ -790,6 +803,7 @@ gov_attr(low_power_ceil_mbps, 0U, 2500U);
 gov_attr(low_power_io_percent, 1U, 100U);
 gov_attr(low_power_delay, 1U, 60U);
 gov_list_attr(mbps_zones, NUM_MBPS_ZONES, 0U, UINT_MAX);
+gov_attr(screen_off_max_freq, 0U, UINT_MAX);
 
 static struct attribute *dev_attr[] = {
 	&dev_attr_guard_band_mbps.attr,
@@ -810,6 +824,7 @@ static struct attribute *dev_attr[] = {
 	&dev_attr_low_power_delay.attr,
 	&dev_attr_mbps_zones.attr,
 	&dev_attr_throttle_adj.attr,
+	&dev_attr_screen_off_max_freq.attr,
 	NULL,
 };
 
@@ -866,6 +881,7 @@ static int devfreq_bw_hwmon_ev_handler(struct devfreq *df,
 		if (ret) {
 			dev_err(df->dev.parent,
 				"Unable to resume HW monitor (%d)\n", ret);
+			mutex_unlock(&sync_lock);
 			return ret;
 		}
 		mutex_unlock(&sync_lock);
@@ -954,6 +970,7 @@ int register_bw_hwmon(struct device *dev, struct bw_hwmon *hwmon)
 	node->hyst_length = 0;
 	node->idle_mbps = 400;
 	node->mbps_zones[0] = 0;
+	node->screen_off_max_freq = 762;
 	node->hw = hwmon;
 
 	mutex_lock(&list_lock);

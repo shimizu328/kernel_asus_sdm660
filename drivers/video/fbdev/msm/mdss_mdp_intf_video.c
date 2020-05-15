@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -103,6 +103,9 @@ struct mdss_mdp_video_ctx {
 	u32 intf_irq_mask;
 	spinlock_t mdss_mdp_video_lock;
 	spinlock_t mdss_mdp_intf_intr_lock;
+
+	enum mdss_mdp_csc_type cdm_csc_type;
+	bool yuv_conv;
 };
 
 static void mdss_mdp_fetch_start_config(struct mdss_mdp_video_ctx *ctx,
@@ -1023,6 +1026,8 @@ static int mdss_mdp_video_ctx_stop(struct mdss_mdp_ctl *ctl,
 	mdss_mdp_set_intf_intr_callback(ctx, MDSS_MDP_INTF_IRQ_PROG_LINE,
 		NULL, NULL);
 
+	ctx->yuv_conv = false;
+
 	ctx->ref_cnt--;
 end:
 	mutex_unlock(&ctl->offlock);
@@ -1120,6 +1125,7 @@ static void mdss_mdp_video_vsync_intr_done(void *arg)
 	struct mdss_mdp_video_ctx *ctx = ctl->intf_ctx[MASTER_CTX];
 	struct mdss_mdp_vsync_handler *tmp;
 	ktime_t vsync_time;
+	u32 ctl_flush_bits = 0;
 
 	if (!ctx) {
 		pr_err("invalid ctx\n");
@@ -1129,10 +1135,13 @@ static void mdss_mdp_video_vsync_intr_done(void *arg)
 	vsync_time = ktime_get();
 	ctl->vsync_cnt++;
 
-	MDSS_XLOG(ctl->num, ctl->vsync_cnt, ctl->vsync_cnt);
+	ctl_flush_bits = mdss_mdp_ctl_read(ctl, MDSS_MDP_REG_CTL_FLUSH);
 
-	pr_debug("intr ctl=%d vsync cnt=%u vsync_time=%d\n",
-		 ctl->num, ctl->vsync_cnt, (int)ktime_to_ms(vsync_time));
+	MDSS_XLOG(ctl->num, ctl->vsync_cnt, ctl_flush_bits);
+
+	pr_debug("intr ctl=%d vsync cnt=%u vsync_time=%d ctl_flush=%d\n",
+		 ctl->num, ctl->vsync_cnt, (int)ktime_to_ms(vsync_time),
+		 ctl_flush_bits);
 
 	ctx->polling_en = false;
 	complete_all(&ctx->vsync_comp);
@@ -1268,7 +1277,7 @@ static void mdss_mdp_video_underrun_intr_done(void *arg)
 
 	ctl->underrun_cnt++;
 	MDSS_XLOG(ctl->num, ctl->underrun_cnt);
-	trace_mdp_video_underrun_done(ctl->num, ctl->underrun_cnt);
+//	trace_mdp_video_underrun_done(ctl->num, ctl->underrun_cnt);
 	pr_debug("display underrun detected for ctl=%d count=%d\n", ctl->num,
 			ctl->underrun_cnt);
 
@@ -1641,6 +1650,75 @@ end:
 	return rc;
 }
 
+static int mdss_mdp_update_csc_matrix(struct mdss_mdp_ctl *ctl)
+{
+	struct mdss_mdp_video_ctx *ctx;
+	struct mdss_data_type *mdata;
+	struct mdss_panel_data *pdata;
+	struct mdss_panel_info *pinfo;
+	struct mdss_mdp_format_params *fmt;
+	enum mdss_mdp_csc_type csc_type;
+	int rc = 0;
+
+	ctx = (struct mdss_mdp_video_ctx *) ctl->intf_ctx[MASTER_CTX];
+	if (!ctx) {
+		pr_err("%s: invalid ctx\n", __func__);
+		return -ENODEV;
+	}
+
+	mdata = ctl->mdata;
+	pdata = ctl->panel_data;
+	pinfo = &pdata->panel_info;
+
+	if (!mdss_mdp_is_cdm_supported(mdata, ctl->intf_type, 0)) {
+		pr_debug("%s: CDM is not supported\n", __func__);
+		goto error;
+	}
+
+	if (IS_ERR_OR_NULL(ctl->cdm)) {
+		pr_debug("%s: CDM is not initialized\n", __func__);
+		goto error;
+	}
+
+	if (!ctx->yuv_conv) {
+		pr_debug("%s: CDM not configured to convert to YUV yet\n",
+				__func__);
+		goto error;
+	}
+
+	fmt = mdss_mdp_get_format_params(pinfo->out_format);
+	if (fmt->is_yuv) {
+		csc_type = MDSS_MDP_CSC_RGB2YUV_709L;
+		if (pdata->get_csc_type)
+			csc_type = pdata->get_csc_type(pdata);
+
+		pr_debug("cdm_csc_type = %d csc_type = %d\n",
+				ctx->cdm_csc_type, csc_type);
+		if (ctx->cdm_csc_type != csc_type) {
+
+			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_ON);
+			rc = mdss_mdp_csc_setup(MDSS_MDP_BLOCK_CDM,
+						ctl->cdm->num, csc_type);
+			mdss_mdp_clk_ctrl(MDP_BLOCK_POWER_OFF);
+
+			if (rc) {
+				pr_err("%s: CDM CSC setup failed, rc = %d\n",
+						__func__, rc);
+				goto error;
+			}
+
+			pr_debug("%s: updating csc %d to %d\n", __func__,
+					ctx->cdm_csc_type, csc_type);
+
+			ctx->cdm_csc_type = csc_type;
+			pinfo->csc_type = csc_type;
+			ctl->flush_bits |= BIT(26);
+		}
+	}
+error:
+	return rc;
+}
+
 static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 {
 	struct mdss_mdp_video_ctx *ctx;
@@ -1731,6 +1809,8 @@ static int mdss_mdp_video_display(struct mdss_mdp_ctl *ctl, void *arg)
 		mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_POST_PANEL_ON, NULL,
 			CTL_INTF_EVENT_FLAG_DEFAULT);
 	}
+
+	rc = mdss_mdp_update_csc_matrix(ctl);
 
 	rc = mdss_mdp_video_avr_trigger_setup(ctl);
 	if (rc) {
@@ -1901,7 +1981,7 @@ static void mdss_mdp_fetch_start_config(struct mdss_mdp_video_ctx *ctx,
 
 	mdata = ctl->mdata;
 
-	pinfo->prg_fet = mdss_mdp_get_prefetch_lines(pinfo);
+	pinfo->prg_fet = mdss_mdp_get_prefetch_lines(pinfo, true);
 	if (!pinfo->prg_fet) {
 		pr_debug("programmable fetch is not needed/supported\n");
 
@@ -1920,7 +2000,7 @@ static void mdss_mdp_fetch_start_config(struct mdss_mdp_video_ctx *ctx,
 	 * Fetch should always be outside the active lines. If the fetching
 	 * is programmed within active region, hardware behavior is unknown.
 	 */
-	v_total = mdss_panel_get_vtotal(pinfo);
+	v_total = mdss_panel_get_vtotal_fixed(pinfo);
 	h_total = mdss_panel_get_htotal(pinfo, true);
 
 	fetch_start = (v_total - pinfo->prg_fet) * h_total + 1;
@@ -1951,10 +2031,24 @@ static int mdss_mdp_video_cdm_setup(struct mdss_mdp_cdm *cdm,
 {
 	struct mdp_cdm_cfg setup;
 
-	if (fmt->is_yuv)
-		setup.csc_type = MDSS_MDP_CSC_RGB2YUV_601FR;
-	else
-		setup.csc_type = MDSS_MDP_CSC_RGB2RGB;
+	if (fmt->is_yuv) {
+		if (pinfo->is_ce_mode) {
+			if (pinfo->yres < 720)
+				setup.csc_type = MDSS_MDP_CSC_RGB2YUV_601L;
+			else
+				setup.csc_type = MDSS_MDP_CSC_RGB2YUV_709L;
+		} else {
+			if (pinfo->yres < 720)
+				setup.csc_type = MDSS_MDP_CSC_RGB2YUV_601FR;
+			else
+				setup.csc_type = MDSS_MDP_CSC_RGB2YUV_709FR;
+		}
+	} else {
+		if (pinfo->is_ce_mode)
+			setup.csc_type = MDSS_MDP_CSC_RGB2RGB_L;
+		else
+			setup.csc_type = MDSS_MDP_CSC_RGB2RGB;
+	}
 
 	switch (fmt->chroma_sample) {
 	case MDSS_MDP_CHROMA_RGB:
@@ -1980,8 +2074,10 @@ static int mdss_mdp_video_cdm_setup(struct mdss_mdp_cdm *cdm,
 		return -EINVAL;
 	}
 
+	pinfo->csc_type = setup.csc_type;
+
 	setup.out_format = pinfo->out_format;
-	setup.mdp_csc_bit_depth = MDP_CDM_CSC_8BIT;
+	setup.mdp_csc_bit_depth = MDP_CDM_CSC_10BIT;
 	setup.output_width = pinfo->xres + pinfo->lcdc.xres_pad;
 	setup.output_height = pinfo->yres + pinfo->lcdc.yres_pad;
 	return mdss_mdp_cdm_setup(cdm, &setup);
@@ -2116,6 +2212,7 @@ static int mdss_mdp_video_ctx_setup(struct mdss_mdp_ctl *ctl,
 	}
 
 	if (mdss_mdp_is_cdm_supported(mdata, ctl->intf_type, 0)) {
+		bool needs_qr_conversion = false;
 
 		fmt = mdss_mdp_get_format_params(pinfo->out_format);
 		if (!fmt) {
@@ -2123,7 +2220,11 @@ static int mdss_mdp_video_ctx_setup(struct mdss_mdp_ctl *ctl,
 			       pinfo->out_format);
 			return -EINVAL;
 		}
-		if (fmt->is_yuv) {
+
+		if (ctl->intf_type == MDSS_INTF_HDMI && pinfo->is_ce_mode)
+			needs_qr_conversion = true;
+
+		if (fmt->is_yuv || needs_qr_conversion) {
 			ctl->cdm =
 			mdss_mdp_cdm_init(ctl, MDP_CDM_CDWN_OUTPUT_HDMI);
 			if (!IS_ERR_OR_NULL(ctl->cdm)) {
@@ -2133,6 +2234,10 @@ static int mdss_mdp_video_ctx_setup(struct mdss_mdp_ctl *ctl,
 					       __func__);
 					return -EINVAL;
 				}
+				if (fmt->is_yuv)
+					ctx->yuv_conv = true;
+
+				ctx->cdm_csc_type = pinfo->csc_type;
 				ctl->flush_bits |= BIT(26);
 			} else {
 				pr_err("%s: failed to initialize cdm\n",
@@ -2458,10 +2563,21 @@ static int mdss_mdp_video_early_wake_up(struct mdss_mdp_ctl *ctl)
 	 * lot of latency rendering the input events useless in preventing the
 	 * idle time out.
 	 */
-	if (ctl->mfd->idle_state == MDSS_FB_IDLE_TIMER_RUNNING) {
-		if (ctl->mfd->idle_time)
+	if ((ctl->mfd->idle_state == MDSS_FB_IDLE_TIMER_RUNNING) ||
+				(ctl->mfd->idle_state == MDSS_FB_IDLE)) {
+		/*
+		 * Modify the idle time so that an idle fallback can be
+		 * triggered for those cases, where we have no update
+		 * despite of a touch event and idle time is 0.
+		 */
+		if (!ctl->mfd->idle_time) {
+			ctl->mfd->idle_time = 70;
+			schedule_delayed_work(&ctl->mfd->idle_notify_work,
+							msecs_to_jiffies(200));
+		} else {
 			mod_delayed_work(system_wq, &ctl->mfd->idle_notify_work,
 					 msecs_to_jiffies(ctl->mfd->idle_time));
+		}
 		pr_debug("Delayed idle time\n");
 	} else {
 		pr_debug("Nothing to done for this state (%d)\n",

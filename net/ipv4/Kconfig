@@ -298,6 +298,7 @@ config SYN_COOKIES
 
 config NET_IPVTI
 	tristate "Virtual (secure) IP: tunneling"
+	depends on IPV6 || IPV6=n
 	select INET_TUNNEL
 	select NET_IP_TUNNEL
 	depends on INET_XFRM_MODE_TUNNEL
@@ -632,6 +633,37 @@ config TCP_CONG_CDG
 	  D.A. Hayes and G. Armitage. "Revisiting TCP congestion control using
 	  delay gradients." In Networking 2011. Preprint: http://goo.gl/No3vdg
 
+config TCP_CONG_SOCIOPATH
+        tristate "TCP Sociopath"
+        default n
+        ---help---
+        This is basically TCP Reno with no slow start and a much more
+        aggressive ssthresh recalculation (lowers it by 5% instead of 50%).
+        Use responsibly!
+
+config TCP_CONG_AGILESD
+        tristate "Agile-SD Congestion control"
+        default n
+        ---help---
+        
+        This is version 1.0 of Agile-SD TCP. It is a sender-side only. 
+        It contributes the Agility Factor (AF) to shorten the epoch time 
+        and to make TCP independent from RTT. AF reduces the sensitivity 
+        to packet losses, which in turn Agile-SD to achieve better throughput 
+        over high-speed networks.
+
+config TCP_CONG_CHINA
+        tristate "TCP_China"
+        default n
+        ---help---
+        
+        TCP-Africa is a delay-sensitive congestion avoidance algorithm for TCP that
+	allows for scalable, aggressive behavior in large underutilized links, yet
+        falls back to the more conservative TCP-Reno algorithm once links become
+        well utilized and congestion is imminent.
+        TCP-China is a modification of TCP-Africa that keeps using fast mode all the
+        time, regardless of fairness.
+
 choice
 	prompt "Default TCP congestion control"
 	default DEFAULT_CUBIC
@@ -657,14 +689,23 @@ choice
 	config DEFAULT_VENO
 		bool "Veno" if TCP_CONG_VENO=y
 
-	config DEFAULT_WESTWOOD
-		bool "Westwood" if TCP_CONG_WESTWOOD=y
+    config DEFAULT_WESTWOOD
+        bool "Westwood" if TCP_CONG_WESTWOOD=y
+
+	config DEFAULT_SOCIOPATH
+		bool "Sociopath" if TCP_CONG_SOCIOPATH=y
 
 	config DEFAULT_DCTCP
 		bool "DCTCP" if TCP_CONG_DCTCP=y
 
+        config DEFAULT_AGILESD
+		bool "AGILESD" if TCP_CONG_AGILESD=y
+
 	config DEFAULT_CDG
 		bool "CDG" if TCP_CONG_CDG=y
+
+	config DEFAULT_CHINA
+		bool "CHINA" if TCP_CONG_CDG=y
 
 	config DEFAULT_RENO
 		bool "Reno"
@@ -689,6 +730,10 @@ config DEFAULT_TCP_CONG
 	default "reno" if DEFAULT_RENO
 	default "dctcp" if DEFAULT_DCTCP
 	default "cdg" if DEFAULT_CDG
+	default "bbr" if DEFAULT_BBR
+	default "sociopath" if DEFAULT_SOCIOPATH
+	default "agilesd" if DEFAULT_AGILESD
+        default "china" if DEFAULT_CHINA
 	default "cubic"
 
 config TCP_MD5SIG

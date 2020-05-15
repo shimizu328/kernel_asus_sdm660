@@ -1,4 +1,4 @@
-/* Copyright (c) 2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -165,6 +165,17 @@ int ipa2_register_ipa_ready_cb(void (*ipa_ready_cb)(void *), void *user_data)
 	return -EEXIST;
 }
 
+int ipa2_ntn_uc_reg_rdyCB(void (*ipauc_ready_cb)(void *), void *priv)
+{
+	return ipa2_register_ipa_ready_cb(ipauc_ready_cb, priv);
+}
+
+void ipa2_ntn_uc_dereg_rdyCB(void)
+{
+	ipa_ctx->uc_ntn_ctx.uc_ready_cb = NULL;
+	ipa_ctx->uc_ntn_ctx.priv = NULL;
+}
+
 static void ipa_uc_ntn_loaded_handler(void)
 {
 	if (!ipa_ctx) {
@@ -251,7 +262,7 @@ static int ipa2_uc_send_ntn_setup_pipe_cmd(
 	result = ipa_uc_send_cmd((u32)(cmd.phys_base),
 				IPA_CPU_2_HW_CMD_OFFLOAD_CHANNEL_SET_UP,
 				IPA_HW_2_CPU_OFFLOAD_CMD_STATUS_SUCCESS,
-				false, IPA_TIMEOUT(10));
+				false, 10*HZ);
 	if (result)
 		result = -EFAULT;
 
@@ -413,7 +424,7 @@ int ipa2_tear_down_uc_offload_pipes(int ipa_ep_idx_ul,
 	result = ipa_uc_send_cmd((u32)(cmd.phys_base),
 				IPA_CPU_2_HW_CMD_OFFLOAD_TEAR_DOWN,
 				IPA_HW_2_CPU_OFFLOAD_CMD_STATUS_SUCCESS,
-				false, IPA_TIMEOUT(10));
+				false, 10*HZ);
 	if (result) {
 		IPAERR("fail to tear down dl pipe\n");
 		result = -EFAULT;
@@ -425,7 +436,7 @@ int ipa2_tear_down_uc_offload_pipes(int ipa_ep_idx_ul,
 	result = ipa_uc_send_cmd((u32)(cmd.phys_base),
 				IPA_CPU_2_HW_CMD_OFFLOAD_TEAR_DOWN,
 				IPA_HW_2_CPU_OFFLOAD_CMD_STATUS_SUCCESS,
-				false, IPA_TIMEOUT(10));
+				false, 10*HZ);
 	if (result) {
 		IPAERR("fail to tear down ul pipe\n");
 		result = -EFAULT;

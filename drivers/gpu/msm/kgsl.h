@@ -1,4 +1,4 @@
-/* Copyright (c) 2008-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2008-2016,2018-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -28,6 +28,7 @@
 #include <linux/uaccess.h>
 #include <linux/kthread.h>
 #include <asm/cacheflush.h>
+#include <linux/compat.h>
 
 /*
  * --- kgsl drawobj flags ---
@@ -51,11 +52,12 @@
 /* The number of memstore arrays limits the number of contexts allowed.
  * If more contexts are needed, update multiple for MEMSTORE_SIZE
  */
-#define KGSL_MEMSTORE_SIZE	((int)(PAGE_SIZE * 2))
+#define KGSL_MEMSTORE_SIZE	((int)(PAGE_SIZE * 8))
 #define KGSL_MEMSTORE_GLOBAL	(0)
 #define KGSL_PRIORITY_MAX_RB_LEVELS 4
 #define KGSL_MEMSTORE_MAX	(KGSL_MEMSTORE_SIZE / \
 	sizeof(struct kgsl_devmemstore) - 1 - KGSL_PRIORITY_MAX_RB_LEVELS)
+#define KGSL_MAX_CONTEXTS_PER_PROC 200
 
 #define MEMSTORE_RB_OFFSET(rb, field)	\
 	KGSL_MEMSTORE_OFFSET(((rb)->id + KGSL_MEMSTORE_MAX), field)
@@ -149,12 +151,16 @@ struct kgsl_driver {
 		atomic_long_t secure_max;
 		atomic_long_t mapped;
 		atomic_long_t mapped_max;
+		atomic_long_t page_free_pending;
+		atomic_long_t page_alloc_pending;
 	} stats;
 	unsigned int full_cache_threshold;
 	struct workqueue_struct *workqueue;
 	struct workqueue_struct *mem_workqueue;
 	struct kthread_worker worker;
+	struct kthread_worker low_prio_worker;
 	struct task_struct *worker_thread;
+	struct task_struct *low_prio_worker_thread;
 };
 
 extern struct kgsl_driver kgsl_driver;
@@ -188,6 +194,8 @@ struct kgsl_memdesc_ops {
 #define KGSL_MEMDESC_TZ_LOCKED BIT(7)
 /* The memdesc is allocated through contiguous memory */
 #define KGSL_MEMDESC_CONTIG BIT(8)
+/* For global buffers, randomly assign an address from the region */
+#define KGSL_MEMDESC_RANDOM BIT(9)
 
 /**
  * struct kgsl_memdesc - GPU memory object descriptor
@@ -199,6 +207,7 @@ struct kgsl_memdesc_ops {
  * @physaddr: Physical address of the memory object
  * @size: Size of the memory object
  * @mapsize: Size of memory mapped in userspace
+ * @pad_to: Size that we pad the memdesc to
  * @priv: Internal flags and settings
  * @sgt: Scatter gather table for allocated pages
  * @ops: Function hooks for the memdesc memory type
@@ -218,6 +227,7 @@ struct kgsl_memdesc {
 	phys_addr_t physaddr;
 	uint64_t size;
 	uint64_t mapsize;
+	uint64_t pad_to;
 	unsigned int priv;
 	struct sg_table *sgt;
 	struct kgsl_memdesc_ops *ops;
@@ -283,6 +293,14 @@ struct kgsl_event_group;
 typedef void (*kgsl_event_func)(struct kgsl_device *, struct kgsl_event_group *,
 		void *, int);
 
+enum kgsl_priority {
+	KGSL_EVENT_REGULAR_PRIORITY = 0,
+	KGSL_EVENT_LOW_PRIORITY,
+	KGSL_EVENT_NUM_PRIORITIES
+};
+
+const char *prio_to_string(enum kgsl_priority prio);
+
 /**
  * struct kgsl_event - KGSL GPU timestamp event
  * @device: Pointer to the KGSL device that owns the event
@@ -306,6 +324,7 @@ struct kgsl_event {
 	unsigned int created;
 	struct kthread_work work;
 	int result;
+	enum kgsl_priority prio;
 	struct kgsl_event_group *group;
 };
 
@@ -621,5 +640,10 @@ static inline void kgsl_gpu_sysfs_add_link(struct kobject *dst,
 		return;
 
 	kernfs_create_link(dst->sd, dst_name, old);
+}
+
+static inline bool kgsl_is_compat_task(void)
+{
+	return (BITS_PER_LONG == 32) || is_compat_task();
 }
 #endif /* __KGSL_H */

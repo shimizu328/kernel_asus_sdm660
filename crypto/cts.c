@@ -78,12 +78,12 @@ static int cts_cbc_encrypt(struct crypto_cts_ctx *ctx,
 			   unsigned int nbytes)
 {
 	int bsize = crypto_blkcipher_blocksize(desc->tfm);
-	u8 tmp[bsize], tmp2[bsize];
+	u8 tmp[MAX_CIPHER_BLOCKSIZE], tmp2[MAX_CIPHER_BLOCKSIZE];
 	struct blkcipher_desc lcldesc;
 	struct scatterlist sgsrc[1], sgdst[1];
 	int lastn = nbytes - bsize;
-	u8 iv[bsize];
-	u8 s[bsize * 2], d[bsize * 2];
+	u8 iv[MAX_CIPHER_BLOCKSIZE];
+	u8 s[MAX_CIPHER_BLOCKSIZE * 2], d[MAX_CIPHER_BLOCKSIZE * 2];
 	int err;
 
 	if (lastn < 0)
@@ -137,8 +137,8 @@ static int crypto_cts_encrypt(struct blkcipher_desc *desc,
 	lcldesc.info = desc->info;
 	lcldesc.flags = desc->flags;
 
-	if (tot_blocks == 1) {
-		err = crypto_blkcipher_encrypt_iv(&lcldesc, dst, src, bsize);
+	if (tot_blocks <= 1) {
+		err = crypto_blkcipher_encrypt_iv(&lcldesc, dst, src, nbytes);
 	} else if (nbytes <= bsize * 2) {
 		err = cts_cbc_encrypt(ctx, desc, dst, src, 0, nbytes);
 	} else {
@@ -164,12 +164,12 @@ static int cts_cbc_decrypt(struct crypto_cts_ctx *ctx,
 			   unsigned int nbytes)
 {
 	int bsize = crypto_blkcipher_blocksize(desc->tfm);
-	u8 tmp[bsize];
+	u8 tmp[MAX_CIPHER_BLOCKSIZE];
 	struct blkcipher_desc lcldesc;
 	struct scatterlist sgsrc[1], sgdst[1];
 	int lastn = nbytes - bsize;
-	u8 iv[bsize];
-	u8 s[bsize * 2], d[bsize * 2];
+	u8 iv[MAX_CIPHER_BLOCKSIZE];
+	u8 s[MAX_CIPHER_BLOCKSIZE * 2], d[MAX_CIPHER_BLOCKSIZE * 2];
 	int err;
 
 	if (lastn < 0)
@@ -232,8 +232,8 @@ static int crypto_cts_decrypt(struct blkcipher_desc *desc,
 	lcldesc.info = desc->info;
 	lcldesc.flags = desc->flags;
 
-	if (tot_blocks == 1) {
-		err = crypto_blkcipher_decrypt_iv(&lcldesc, dst, src, bsize);
+	if (tot_blocks <= 1) {
+		err = crypto_blkcipher_decrypt_iv(&lcldesc, dst, src, nbytes);
 	} else if (nbytes <= bsize * 2) {
 		err = cts_cbc_decrypt(ctx, desc, dst, src, 0, nbytes);
 	} else {

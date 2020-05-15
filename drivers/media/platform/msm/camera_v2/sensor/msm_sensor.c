@@ -17,16 +17,13 @@
 #include "msm_camera_i2c_mux.h"
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
-/* Huaqin modify for ID Pin differentiation by lizihao at 2018/05/29 start*/
+
+#ifdef CONFIG_MACH_ASUS_X00T
 #include <linux/gpio.h>
-
 #define SUB_CAM_ID_PIN 55
-/* Huaqin modify for ID Pin differentiation by lizihao at 2018/05/29 end*/
-
-/* Huaqin modify for ov8856-1b compatible by lizihao at 2018/06/22 start*/
 int ov8856_read_mask = 0;
 uint16_t ov8856_mask = 0;
-/* Huaqin modify for ov8856-1b compatible by lizihao at 2018/06/22 end*/
+#endif
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
@@ -250,12 +247,12 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 {
 	int rc = 0;
 	uint16_t chipid = 0;
-	/* Huaqin modify for ov8856-1b compatible by lizihao at 2018/06/22 start*/
-	int id_match = 0;
-	/* Huaqin modify for ov8856-1b compatible by lizihao at 2018/06/22 end*/
 	struct msm_camera_i2c_client *sensor_i2c_client;
 	struct msm_camera_slave_info *slave_info;
 	const char *sensor_name;
+#ifdef CONFIG_MACH_ASUS_X00T
+	int id_match = 0;
+#endif
 
 	if (!s_ctrl) {
 		pr_err("%s:%d failed: %pK\n",
@@ -265,6 +262,14 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	sensor_i2c_client = s_ctrl->sensor_i2c_client;
 	slave_info = s_ctrl->sensordata->slave_info;
 	sensor_name = s_ctrl->sensordata->sensor_name;
+
+	if ((strcmp(sensor_name, "ov13855_chicony_rear") == 0) ||
+	    (strcmp(sensor_name, "hi556_holitech_13m") == 0) ||
+	    (strcmp(sensor_name, "hi556_holitech_16m") == 0)) {
+		pr_warn("%s: not going to check ov13855 or hi556\n",
+			__func__);
+		return -ENODEV;
+	}
 
 	if (!sensor_i2c_client || !slave_info || !sensor_name) {
 		pr_err("%s:%d failed: %pK %pK %pK\n",
@@ -287,8 +292,9 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		pr_err("%s chip id %x does not match %x\n",
 				__func__, chipid, slave_info->sensor_id);
 		return -ENODEV;
-	/* Huaqin modify for ov8856-1b compatible by lizihao at 2018/06/22 start*/
-	}else{
+	}
+#ifdef CONFIG_MACH_ASUS_X00T
+	else{
 		id_match = 1;
 	}
 
@@ -321,8 +327,6 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 			sensor_i2c_client, 0x3d81,
 			0x01, MSM_CAMERA_I2C_BYTE_DATA);
 
-		//msleep(20);
-
 		rc = sensor_i2c_client->i2c_func_tbl->i2c_read(
 			sensor_i2c_client, 0x700f,
 			&ov8856_mask, MSM_CAMERA_I2C_BYTE_DATA);
@@ -346,9 +350,7 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		pr_err("Front camera is ov8856-1b Configuration");
 		return -ENODEV;
 	}
-	/* Huaqin modify for ov8856-1b compatible by lizihao at 2018/06/22 end*/
 
-	/* Huaqin modify for ID Pin differentiation by lizihao at 2018/05/29 start*/
 	if(0 == strcmp(sensor_name, "gc5025_ofilm_13m") && gpio_get_value(SUB_CAM_ID_PIN)){
 		pr_err("Sub camera is 16+5M ofilm Configuration");
 		return -ENODEV;
@@ -358,8 +360,7 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 		pr_err("Sub camera is 16+5M holitech Configuration");
 		return -ENODEV;
 	}
-	/* Huaqin modify for ID Pin differentiation by lizihao at 2018/05/29 end*/
-
+#endif
 	return rc;
 }
 

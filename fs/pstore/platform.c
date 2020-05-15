@@ -307,10 +307,6 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 		bool compressed;
 		size_t total_len;
 
-		/* Huaqin add for ZQL1650-358 by liunianliang at 2018/02/08 start */
-		big_oops_buf = NULL;
-		/* Huaqin add for ZQL1650-358 by liunianliang at 2018/02/08 end */
-
 		if (big_oops_buf && is_locked) {
 			dst = big_oops_buf;
 			hsize = sprintf(dst, "%s#%d Part%u\n", why,
@@ -363,9 +359,6 @@ static void pstore_dump(struct kmsg_dumper *dumper,
 
 static struct kmsg_dumper pstore_dumper = {
 	.dump = pstore_dump,
-	/* Huaqin add for ZQL1650-358 by liunianliang at 2018/02/08 start */
-	.name = "pstore_ramoops",
-	/* Huaqin add for ZQL1650-358 by liunianliang at 2018/02/08 end */
 };
 
 /*
@@ -399,8 +392,8 @@ static void pstore_console_write(struct console *con, const char *s, unsigned c)
 		} else {
 			spin_lock_irqsave(&psinfo->buf_lock, flags);
 		}
-		memcpy(psinfo->buf, s, c);
-		psinfo->write(PSTORE_TYPE_CONSOLE, 0, &id, 0, 0, 0, c, psinfo);
+		psinfo->write_buf(PSTORE_TYPE_CONSOLE, 0, &id, 0,
+				  s, 0, c, psinfo);
 		spin_unlock_irqrestore(&psinfo->buf_lock, flags);
 		s += c;
 		c = e - s;

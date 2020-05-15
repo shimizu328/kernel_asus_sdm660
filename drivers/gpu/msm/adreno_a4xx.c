@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -393,7 +393,7 @@ static void a4xx_enable_pc(struct adreno_device *adreno_dev)
 
 	kgsl_regwrite(KGSL_DEVICE(adreno_dev), A4XX_CP_POWER_COLLAPSE_CNTL,
 		0x00400010);
-	trace_adreno_sp_tp((unsigned long) __builtin_return_address(0));
+//	trace_adreno_sp_tp((unsigned long) __builtin_return_address(0));
 };
 
 /*
@@ -524,7 +524,7 @@ static void a4xx_protect_init(struct adreno_device *adreno_dev)
 	iommu_regs = kgsl_mmu_get_prot_regs(&device->mmu);
 	if (iommu_regs)
 		adreno_set_protected_registers(adreno_dev, &index,
-				iommu_regs->base, iommu_regs->range);
+				iommu_regs->base, ilog2(iommu_regs->range));
 }
 
 static struct adreno_snapshot_sizes a4xx_snap_sizes = {
@@ -1685,10 +1685,10 @@ static void a4xx_preempt_callback(struct adreno_device *adreno_dev, int bit)
 	if (atomic_read(&adreno_dev->preempt.state) != ADRENO_PREEMPT_TRIGGERED)
 		return;
 
-	trace_adreno_hw_preempt_trig_to_comp_int(adreno_dev->cur_rb,
-			      adreno_dev->next_rb,
-			      adreno_get_rptr(adreno_dev->cur_rb),
-			      adreno_get_rptr(adreno_dev->next_rb));
+//	trace_adreno_hw_preempt_trig_to_comp_int(adreno_dev->cur_rb,
+//			      adreno_dev->next_rb,
+//			      adreno_get_rptr(adreno_dev->cur_rb),
+//			      adreno_get_rptr(adreno_dev->next_rb));
 
 	adreno_dispatcher_schedule(KGSL_DEVICE(adreno_dev));
 }
@@ -1778,7 +1778,7 @@ struct adreno_gpudev adreno_a4xx_gpudev = {
 	.ft_perf_counters_count = ARRAY_SIZE(a4xx_ft_perf_counters),
 	.perfcounters = &a4xx_perfcounters,
 	.irq = &a4xx_irq,
-	.irq_trace = trace_kgsl_a4xx_irq_status,
+//	.irq_trace = trace_kgsl_a4xx_irq_status,
 	.snapshot_data = &a4xx_snapshot_data,
 	.num_prio_levels = KGSL_PRIORITY_MAX_RB_LEVELS,
 	.vbif_xin_halt_ctrl0_mask = A4XX_VBIF_XIN_HALT_CTRL0_MASK,

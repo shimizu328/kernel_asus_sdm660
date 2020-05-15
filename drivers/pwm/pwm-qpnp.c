@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, 2019 The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -28,7 +28,6 @@
 #include <linux/of_address.h>
 #include <linux/radix-tree.h>
 #include <linux/qpnp/pwm.h>
-#include <linux/delay.h>
 
 #define QPNP_LPG_DRIVER_NAME	"qcom,qpnp-pwm"
 #define QPNP_LPG_CHANNEL_BASE	"qpnp-lpg-channel-base"
@@ -695,17 +694,6 @@ static int qpnp_lpg_save_pwm_value(struct qpnp_pwm_chip *chip)
 	if (pwm_config->pwm_value > max_pwm_value)
 		pwm_config->pwm_value = max_pwm_value;
 
-	value = pwm_config->pwm_value;
-	mask = QPNP_PWM_VALUE_LSB_MASK;
-
-	pr_debug("pwm_lsb value:%d\n", value & mask);
-	rc = qpnp_lpg_save_and_write(value, mask,
-			&chip->qpnp_lpg_registers[QPNP_PWM_VALUE_LSB],
-			SPMI_LPG_REG_ADDR(lpg_config->base_addr,
-			QPNP_PWM_VALUE_LSB), 1, chip);
-	if (rc)
-		return rc;
-
 	value = (pwm_config->pwm_value >> QPNP_PWM_VALUE_MSB_SHIFT) &
 					QPNP_PWM_VALUE_MSB_MASK;
 
@@ -716,6 +704,17 @@ static int qpnp_lpg_save_pwm_value(struct qpnp_pwm_chip *chip)
 			&chip->qpnp_lpg_registers[QPNP_PWM_VALUE_MSB],
 			SPMI_LPG_REG_ADDR(lpg_config->base_addr,
 			QPNP_PWM_VALUE_MSB), 1, chip);
+	if (rc)
+		return rc;
+
+	value = pwm_config->pwm_value;
+	mask = QPNP_PWM_VALUE_LSB_MASK;
+
+	pr_debug("pwm_lsb value:%d\n", value & mask);
+	rc = qpnp_lpg_save_and_write(value, mask,
+			&chip->qpnp_lpg_registers[QPNP_PWM_VALUE_LSB],
+			SPMI_LPG_REG_ADDR(lpg_config->base_addr,
+			QPNP_PWM_VALUE_LSB), 1, chip);
 	if (rc)
 		return rc;
 
@@ -1120,9 +1119,6 @@ static int qpnp_lpg_configure_lut_state(struct qpnp_pwm_chip *chip,
 	addr = SPMI_LPG_REG_ADDR(lpg_config->base_addr,
 				QPNP_ENABLE_CONTROL);
 
-	// Add 1mS delay to fix qcom known HW issue
-	mdelay(1);
-
 	if (chip->in_test_mode) {
 		test_enable = (state == QPNP_LUT_ENABLE) ? 1 : 0;
 		rc = qpnp_dtest_config(chip, test_enable);
@@ -1328,6 +1324,15 @@ static int _pwm_enable(struct qpnp_pwm_chip *chip)
 		chip->qpnp_lpg_registers[QPNP_ENABLE_CONTROL]) ||
 			chip->flags & QPNP_PWM_LUT_NOT_SUPPORTED) {
 		rc = qpnp_lpg_configure_pwm_state(chip, QPNP_PWM_ENABLE);
+		if (rc) {
+			pr_err("Failed to enable PWM mode, rc=%d\n", rc);
+			return rc;
+		}
+		rc = qpnp_lpg_glitch_removal(chip, true);
+		if (rc) {
+			pr_err("Failed to enable glitch removal, rc=%d\n", rc);
+			return rc;
+		}
 	} else if (!(chip->flags & QPNP_PWM_LUT_NOT_SUPPORTED)) {
 		rc = qpnp_lpg_configure_lut_state(chip, QPNP_LUT_ENABLE);
 	}
@@ -1503,16 +1508,14 @@ int pwm_change_mode(struct pwm_device *pwm, enum pm_pwm_mode mode)
 			goto unlock;
 		}
 		chip->pwm_mode = mode;
-	}
-	/* Huaqin modify for fixing led cannot work by guojianghong at 2018/2/5 start*/
-	if (chip->enabled) {
-		rc = _pwm_enable(chip);
-		if (rc) {
-			pr_err("Failed to enable PWM, rc=%d\n", rc);
-			goto unlock;
+		if (chip->enabled) {
+			rc = _pwm_enable(chip);
+			if (rc) {
+				pr_err("Failed to enable PWM, rc=%d\n", rc);
+				goto unlock;
+			}
 		}
 	}
-	/* Huaqin modify for fixing led cannot work by guojianghong at 2018/2/5 start*/
 unlock:
 	spin_unlock_irqrestore(&chip->lpg_lock, flags);
 

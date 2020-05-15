@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,9 +20,11 @@
 #include "../codecs/sdm660_cdc/msm-digital-cdc.h"
 #include "../codecs/sdm660_cdc/msm-analog-cdc.h"
 #include "../codecs/msm_sdw/msm_sdw.h"
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#include <linux/pm_qos.h>
+
+#ifdef CONFIG_MACH_ASUS_X00T
 #include <linux/delay.h>
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#endif
 
 #define __CHIPSET__ "SDM660 "
 #define MSM_DAILINK_NAME(name) (__CHIPSET__#name)
@@ -34,6 +36,7 @@
 
 #define WSA8810_NAME_1 "wsa881x.20170211"
 #define WSA8810_NAME_2 "wsa881x.20170212"
+#define MSM_LL_QOS_VALUE 300 /* time in us to ensure LPM doesn't go in C3/C4 */
 
 enum {
 	INT0_MI2S = 0,
@@ -47,7 +50,8 @@ enum {
 };
 
 enum {
-	BT_SLIM7,
+	BT_SLIM7_RX,
+	BT_SLIM7_TX,
 	FM_SLIM8,
 	SLIM_MAX,
 };
@@ -136,12 +140,13 @@ static struct dev_config int_mi2s_cfg[] = {
 	[INT2_MI2S]  = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
 	[INT3_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
 	[INT4_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
-	[INT5_MI2S] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
+	[INT5_MI2S] = {SAMPLING_RATE_8KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
 	[INT6_MI2S] = {SAMPLING_RATE_8KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
 };
 
 static struct dev_config bt_fm_cfg[] = {
-	[BT_SLIM7] = {SAMPLING_RATE_8KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
+	[BT_SLIM7_RX] = {SAMPLING_RATE_8KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
+	[BT_SLIM7_TX] = {SAMPLING_RATE_8KHZ, SNDRV_PCM_FORMAT_S16_LE, 1},
 	[FM_SLIM8] = {SAMPLING_RATE_48KHZ, SNDRV_PCM_FORMAT_S16_LE, 2},
 };
 
@@ -154,12 +159,8 @@ static const char *const int_mi2s_tx_ch_text[] = {"One", "Two",
 static char const *bit_format_text[] = {"S16_LE", "S24_LE", "S24_3LE"};
 static const char *const loopback_mclk_text[] = {"DISABLE", "ENABLE"};
 static char const *bt_sample_rate_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
-
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
-extern int aw87339_chipid_spk;
-extern unsigned char aw87339_audio_kspk_spk(void);
-extern unsigned char aw87339_audio_off_spk(void);
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+static char const *bt_sample_rate_rx_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
+static char const *bt_sample_rate_tx_text[] = {"KHZ_8", "KHZ_16", "KHZ_48"};
 
 static SOC_ENUM_SINGLE_EXT_DECL(int0_mi2s_rx_sample_rate, int_mi2s_rate_text);
 static SOC_ENUM_SINGLE_EXT_DECL(int0_mi2s_rx_chs, int_mi2s_ch_text);
@@ -176,6 +177,8 @@ static SOC_ENUM_SINGLE_EXT_DECL(int4_mi2s_rx_format, bit_format_text);
 static SOC_ENUM_SINGLE_EXT_DECL(int5_mi2s_tx_chs, int_mi2s_ch_text);
 static SOC_ENUM_SINGLE_EXT_DECL(loopback_mclk_en, loopback_mclk_text);
 static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate, bt_sample_rate_text);
+static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate_rx, bt_sample_rate_rx_text);
+static SOC_ENUM_SINGLE_EXT_DECL(bt_sample_rate_tx, bt_sample_rate_tx_text);
 
 static int msm_dmic_event(struct snd_soc_dapm_widget *w,
 			  struct snd_kcontrol *kcontrol, int event);
@@ -485,6 +488,7 @@ done:
 	return ret;
 }
 
+#ifdef CONFIG_MACH_ASUS_X00T
 /* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 start */
 extern int hph_ext_en_gpio;
 extern int hph_ext_sw_gpio;
@@ -526,7 +530,6 @@ static int is_ext_hph_gpio_support(struct platform_device *pdev,
 
 static int enable_hph_ext_sw(struct snd_soc_codec *codec, int enable)
 {
-	/* Huaqin add for delete on new audioboard by xudayi at 2018/03/03 start */
 	#if 0
 	struct snd_soc_card *card = codec->component.card;
 	struct msm_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
@@ -550,17 +553,15 @@ static int enable_hph_ext_sw(struct snd_soc_codec *codec, int enable)
 		gpio_direction_output(pdata->hph_ext_en_gpio, 0);
 	}
 	#endif
-	/* Huaqin add for delete on new audioboard by xudayi at 2018/03/03 end */
 
 	return 0;
 }
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#endif
 
 static int is_ext_spk_gpio_support(struct platform_device *pdev,
 				   struct msm_asoc_mach_data *pdata)
 {
-	/* Huaqin add for delete on new audioboard by xudayi at 2018/03/03 start */
-	#if 0
+#ifndef CONFIG_MACH_ASUS_X00T
 	const char *spk_ext_pa = "qcom,msm-spk-ext-pa";
 
 	pr_debug("%s:Enter\n", __func__);
@@ -578,15 +579,13 @@ static int is_ext_spk_gpio_support(struct platform_device *pdev,
 			return -EINVAL;
 		}
 	}
-	#endif
-	/* Huaqin add for delete on new audioboard by xudayi at 2018/03/03 end */
+#endif
 	return 0;
 }
 
 static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 {
-	/* Huaqin add for delete on new audioboard by xudayi at 2018/03/03 start */
-	#if 0
+#ifndef CONFIG_MACH_ASUS_X00T
 	struct snd_soc_card *card = codec->component.card;
 	struct msm_asoc_mach_data *pdata = snd_soc_card_get_drvdata(card);
 	int ret;
@@ -597,40 +596,29 @@ static int enable_spk_ext_pa(struct snd_soc_codec *codec, int enable)
 		return false;
 	}
 
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
-	pr_err("%s: %s external speaker PA\n", __func__,
+	pr_debug("%s: %s external speaker PA\n", __func__,
 		enable ? "Enable" : "Disable");
 
 	if (enable) {
-		if(aw87339_chipid_spk == -1) {
-			ret = msm_cdc_pinctrl_select_active_state(
-							pdata->ext_spk_gpio_p);
-			if (ret) {
-				pr_err("%s: gpio set cannot be de-activated %s\n",
-						__func__, "ext_spk_gpio");
-				return ret;
-			}
-			gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
-		}else {
-			aw87339_audio_kspk_spk();
+		ret = msm_cdc_pinctrl_select_active_state(
+						pdata->ext_spk_gpio_p);
+		if (ret) {
+			pr_err("%s: gpio set cannot be de-activated %s\n",
+					__func__, "ext_spk_gpio");
+			return ret;
 		}
+		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
 	} else {
-		if(aw87339_chipid_spk == -1) {
-			gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
-			ret = msm_cdc_pinctrl_select_sleep_state(
-							pdata->ext_spk_gpio_p);
-			if (ret) {
-				pr_err("%s: gpio set cannot be de-activated %s\n",
-						__func__, "ext_spk_gpio");
-				return ret;
-			}
-		}else {
-			aw87339_audio_off_spk();
+		gpio_set_value_cansleep(pdata->spk_ext_pa_gpio, enable);
+		ret = msm_cdc_pinctrl_select_sleep_state(
+						pdata->ext_spk_gpio_p);
+		if (ret) {
+			pr_err("%s: gpio set cannot be de-activated %s\n",
+					__func__, "ext_spk_gpio");
+			return ret;
 		}
 	}
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
-	#endif
-	/* Huaqin add for delete on new audioboard by xudayi at 2018/03/03 end */
+#endif
 	return 0;
 }
 
@@ -722,12 +710,18 @@ static int msm_btfm_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 
 	switch (dai_link->be_id) {
 	case MSM_BACKEND_DAI_SLIMBUS_7_RX:
+		param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
+				bt_fm_cfg[BT_SLIM7_RX].bit_format);
+		rate->min = rate->max = bt_fm_cfg[BT_SLIM7_RX].sample_rate;
+		channels->min = channels->max =
+			bt_fm_cfg[BT_SLIM7_RX].channels;
+		break;
 	case MSM_BACKEND_DAI_SLIMBUS_7_TX:
 		param_set_mask(params, SNDRV_PCM_HW_PARAM_FORMAT,
-				bt_fm_cfg[BT_SLIM7].bit_format);
-		rate->min = rate->max = bt_fm_cfg[BT_SLIM7].sample_rate;
+				bt_fm_cfg[BT_SLIM7_TX].bit_format);
+		rate->min = rate->max = bt_fm_cfg[BT_SLIM7_TX].sample_rate;
 		channels->min = channels->max =
-			bt_fm_cfg[BT_SLIM7].channels;
+			bt_fm_cfg[BT_SLIM7_TX].channels;
 		break;
 
 	case MSM_BACKEND_DAI_SLIMBUS_8_TX:
@@ -932,7 +926,7 @@ static int msm_bt_sample_rate_get(struct snd_kcontrol *kcontrol,
 	 * when used for BT_SCO use case. Return either Rx or Tx sample rate
 	 * value.
 	 */
-	switch (bt_fm_cfg[BT_SLIM7].sample_rate) {
+	switch (bt_fm_cfg[BT_SLIM7_RX].sample_rate) {
 	case SAMPLING_RATE_48KHZ:
 		ucontrol->value.integer.value[0] = 2;
 		break;
@@ -945,7 +939,7 @@ static int msm_bt_sample_rate_get(struct snd_kcontrol *kcontrol,
 		break;
 	}
 	pr_debug("%s: sample rate = %d", __func__,
-		 bt_fm_cfg[BT_SLIM7].sample_rate);
+		 bt_fm_cfg[BT_SLIM7_RX].sample_rate);
 
 	return 0;
 }
@@ -955,20 +949,111 @@ static int msm_bt_sample_rate_put(struct snd_kcontrol *kcontrol,
 {
 	switch (ucontrol->value.integer.value[0]) {
 	case 1:
-		bt_fm_cfg[BT_SLIM7].sample_rate = SAMPLING_RATE_16KHZ;
+		bt_fm_cfg[BT_SLIM7_RX].sample_rate = SAMPLING_RATE_16KHZ;
+		bt_fm_cfg[BT_SLIM7_TX].sample_rate = SAMPLING_RATE_16KHZ;
 		break;
 	case 2:
-		bt_fm_cfg[BT_SLIM7].sample_rate = SAMPLING_RATE_48KHZ;
+		bt_fm_cfg[BT_SLIM7_RX].sample_rate = SAMPLING_RATE_48KHZ;
+		bt_fm_cfg[BT_SLIM7_TX].sample_rate = SAMPLING_RATE_48KHZ;
 		break;
 	case 0:
 	default:
-		bt_fm_cfg[BT_SLIM7].sample_rate = SAMPLING_RATE_8KHZ;
+		bt_fm_cfg[BT_SLIM7_RX].sample_rate = SAMPLING_RATE_8KHZ;
+		bt_fm_cfg[BT_SLIM7_TX].sample_rate = SAMPLING_RATE_8KHZ;
 		break;
 	}
 	pr_debug("%s: sample rates: slim7_rx = %d, value = %d\n",
 		 __func__,
-		 bt_fm_cfg[BT_SLIM7].sample_rate,
+		 bt_fm_cfg[BT_SLIM7_RX].sample_rate,
 		 ucontrol->value.enumerated.item[0]);
+
+	return 0;
+}
+
+static int msm_bt_sample_rate_rx_get(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	switch (bt_fm_cfg[BT_SLIM7_RX].sample_rate) {
+	case SAMPLING_RATE_48KHZ:
+		ucontrol->value.integer.value[0] = 2;
+		break;
+	case SAMPLING_RATE_16KHZ:
+		ucontrol->value.integer.value[0] = 1;
+		break;
+	case SAMPLING_RATE_8KHZ:
+	default:
+		ucontrol->value.integer.value[0] = 0;
+		break;
+	}
+	pr_debug("%s: sample rate = %d", __func__,
+		bt_fm_cfg[BT_SLIM7_RX].sample_rate);
+
+	return 0;
+}
+
+static int msm_bt_sample_rate_rx_put(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	switch (ucontrol->value.integer.value[0]) {
+	case 1:
+		bt_fm_cfg[BT_SLIM7_RX].sample_rate = SAMPLING_RATE_16KHZ;
+		break;
+	case 2:
+		bt_fm_cfg[BT_SLIM7_RX].sample_rate = SAMPLING_RATE_48KHZ;
+		break;
+	case 0:
+	default:
+		bt_fm_cfg[BT_SLIM7_RX].sample_rate = SAMPLING_RATE_8KHZ;
+		break;
+	}
+	pr_debug("%s: sample rates: slim7_rx = %d, value = %d\n",
+		__func__,
+		bt_fm_cfg[BT_SLIM7_RX].sample_rate,
+		ucontrol->value.enumerated.item[0]);
+
+	return 0;
+}
+
+static int msm_bt_sample_rate_tx_get(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	switch (bt_fm_cfg[BT_SLIM7_TX].sample_rate) {
+	case SAMPLING_RATE_48KHZ:
+		ucontrol->value.integer.value[0] = 2;
+		break;
+	case SAMPLING_RATE_16KHZ:
+		ucontrol->value.integer.value[0] = 1;
+		break;
+	case SAMPLING_RATE_8KHZ:
+	default:
+		ucontrol->value.integer.value[0] = 0;
+		break;
+	}
+	pr_debug("%s: sample rate = %d", __func__,
+		bt_fm_cfg[BT_SLIM7_TX].sample_rate);
+
+	return 0;
+}
+
+static int msm_bt_sample_rate_tx_put(struct snd_kcontrol *kcontrol,
+					struct snd_ctl_elem_value *ucontrol)
+{
+	switch (ucontrol->value.integer.value[0]) {
+	case 1:
+		bt_fm_cfg[BT_SLIM7_TX].sample_rate = SAMPLING_RATE_16KHZ;
+		break;
+	case 2:
+		bt_fm_cfg[BT_SLIM7_TX].sample_rate = SAMPLING_RATE_48KHZ;
+		break;
+	case 0:
+	default:
+		bt_fm_cfg[BT_SLIM7_TX].sample_rate = SAMPLING_RATE_8KHZ;
+		break;
+	}
+	pr_debug("%s: sample rates: slim7_tx = %d, value = %d\n",
+		__func__,
+		bt_fm_cfg[BT_SLIM7_TX].sample_rate,
+		ucontrol->value.enumerated.item[0]);
 
 	return 0;
 }
@@ -1000,6 +1085,12 @@ static const struct snd_kcontrol_new msm_snd_controls[] = {
 	SOC_ENUM_EXT("BT SampleRate", bt_sample_rate,
 			msm_bt_sample_rate_get,
 			msm_bt_sample_rate_put),
+	SOC_ENUM_EXT("BT SampleRate RX", bt_sample_rate_rx,
+			msm_bt_sample_rate_rx_get,
+			msm_bt_sample_rate_rx_put),
+	SOC_ENUM_EXT("BT SampleRate TX", bt_sample_rate_tx,
+			msm_bt_sample_rate_tx_get,
+			msm_bt_sample_rate_tx_put),
 };
 
 static const struct snd_kcontrol_new msm_sdw_controls[] = {
@@ -1296,9 +1387,11 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 		return NULL;
 
 #define S(X, Y) ((WCD_MBHC_CAL_PLUG_TYPE_PTR(msm_int_wcd_cal)->X) = (Y))
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 	S(v_hs_max, 1700);
-/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#else
+	S(v_hs_max, 1500);
+#endif
 #undef S
 #define S(X, Y) ((WCD_MBHC_CAL_BTN_DET_PTR(msm_int_wcd_cal)->X) = (Y))
 	S(num_btn, WCD_MBHC_DEF_BUTTONS);
@@ -1323,12 +1416,17 @@ static void *def_msm_int_wcd_mbhc_cal(void)
 	 */
 	btn_low[0] = 75;
 	btn_high[0] = 75;
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 	btn_low[1] = 225;
 	btn_high[1] = 225;
 	btn_low[2] = 450;
 	btn_high[2] = 450;
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#else
+	btn_low[1] = 150;
+	btn_high[1] = 150;
+	btn_low[2] = 225;
+	btn_high[2] = 225;
+#endif
 	btn_low[3] = 450;
 	btn_high[3] = 450;
 	btn_low[4] = 500;
@@ -1372,6 +1470,8 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "Secondary Mic");
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic1");
 	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic2");
+	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic3");
+	snd_soc_dapm_ignore_suspend(dapm, "Digital Mic4");
 
 	snd_soc_dapm_ignore_suspend(dapm, "EAR");
 	snd_soc_dapm_ignore_suspend(dapm, "HEADPHONE");
@@ -1379,6 +1479,9 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC1");
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC2");
 	snd_soc_dapm_ignore_suspend(dapm, "AMIC3");
+	snd_soc_dapm_sync(dapm);
+
+	dapm = snd_soc_codec_get_dapm(dig_cdc);
 	snd_soc_dapm_ignore_suspend(dapm, "DMIC1");
 	snd_soc_dapm_ignore_suspend(dapm, "DMIC2");
 	snd_soc_dapm_ignore_suspend(dapm, "DMIC3");
@@ -1387,9 +1490,9 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_sync(dapm);
 
 	msm_anlg_cdc_spk_ext_pa_cb(enable_spk_ext_pa, ana_cdc);
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 	msm_anlg_cdc_hph_ext_sw_cb(enable_hph_ext_sw, ana_cdc);
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
+#endif
 	msm_dig_cdc_hph_comp_cb(msm_config_hph_compander_gpio, dig_cdc);
 
 	card = rtd->card->snd_card;
@@ -1709,6 +1812,29 @@ static struct snd_soc_ops msm_sdw_mi2s_be_ops = {
 	.shutdown = msm_sdw_mi2s_snd_shutdown,
 };
 
+static int msm_fe_qos_prepare(struct snd_pcm_substream *substream)
+{
+	cpumask_t mask;
+
+	if (pm_qos_request_active(&substream->latency_pm_qos_req))
+		pm_qos_remove_request(&substream->latency_pm_qos_req);
+
+	cpumask_clear(&mask);
+	cpumask_set_cpu(1, &mask); /* affine to core 1 */
+	cpumask_set_cpu(2, &mask); /* affine to core 2 */
+	cpumask_copy(&substream->latency_pm_qos_req.cpus_affine, &mask);
+	substream->latency_pm_qos_req.type = PM_QOS_REQ_AFFINE_CORES;
+
+	pm_qos_add_request(&substream->latency_pm_qos_req,
+				PM_QOS_CPU_DMA_LATENCY,
+				MSM_LL_QOS_VALUE);
+	return 0;
+}
+
+static struct snd_soc_ops msm_fe_qos_ops = {
+	.prepare = msm_fe_qos_prepare,
+};
+
 struct snd_soc_dai_link_component dlc_rx1[] = {
 	{
 		.of_node = NULL,
@@ -1965,6 +2091,7 @@ static struct snd_soc_dai_link msm_int_dai[] = {
 		/* this dai link has playback support */
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA5,
+		.ops = &msm_fe_qos_ops,
 	},
 	/* LSM FE */
 	{/* hw:x,14 */
@@ -2031,6 +2158,7 @@ static struct snd_soc_dai_link msm_int_dai[] = {
 		.ignore_pmdown_time = 1,
 		 /* this dai link has playback support */
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA8,
+		.ops = &msm_fe_qos_ops,
 	},
 	{/* hw:x,18 */
 		.name = "HDMI_RX_HOSTLESS",
@@ -2395,8 +2523,7 @@ static struct snd_soc_dai_link msm_int_dai[] = {
 		.ignore_pmdown_time = 1,
 		.be_id = MSM_FRONTEND_DAI_MULTIMEDIA6,
 	},
-
-	/* Huaqin add for config i2s tert dai for nxp pa by xudayi at 2018/03/03 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 	{/* hw:x,40 */
 		.name = "Tertiary MI2S_TX Hostless",
 		.stream_name = "Tertiary MI2S_TX Hostless",
@@ -2414,9 +2541,19 @@ static struct snd_soc_dai_link msm_int_dai[] = {
 		.codec_dai_name = "snd-soc-dummy-dai",
 		.codec_name = "snd-soc-dummy",
 	},
-	/* Huaqin add for config i2s tert dai for nxp pa by xudayi at 2018/03/03 end */
+#endif
 };
 
+#ifdef CONFIG_MACH_ASUS_X00T
+static struct snd_soc_dai_link_component tfa98xx_codecs[] ={
+	{
+		.name     = "tfa98xx.6-0034",
+		.of_node  = NULL,
+		.dai_name = "tfa98xx-aif-6-34",
+	},
+
+};
+#endif
 
 static struct snd_soc_dai_link msm_int_wsa_dai[] = {
 	{/* hw:x,40 */
@@ -2435,17 +2572,6 @@ static struct snd_soc_dai_link msm_int_wsa_dai[] = {
 		.ignore_pmdown_time = 1,
 	},
 };
-
-/* Huaqin add for config i2s tert dai for nxp pa by xudayi at 2018/03/03 start */
-static struct snd_soc_dai_link_component tfa98xx_codecs[] ={
-	{
-		.name     = "tfa98xx.6-0034",
-		.of_node  = NULL,
-		.dai_name = "tfa98xx-aif-6-34",
-	},
-
-};
-/* Huaqin add for config i2s tert dai for nxp pa by xudayi at 2018/03/03 end */
 
 static struct snd_soc_dai_link msm_int_be_dai[] = {
 	/* Backend I2S DAI Links */
@@ -2782,8 +2908,37 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
 	},
-/* Huaqin add for config i2s tert dai for nxp pa by xudayi at 2018/03/03 start */
-#if 0
+#ifdef CONFIG_MACH_ASUS_X00T
+	{
+		.name = LPASS_BE_TERT_MI2S_RX,
+		.stream_name = "Tertiary MI2S Playback",
+		.cpu_dai_name = "msm-dai-q6-mi2s.2",
+		.platform_name = "msm-pcm-routing",
+		.codecs = tfa98xx_codecs,
+		.num_codecs = 1,
+		.no_pcm = 1,
+		.dpcm_playback = 1,
+		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+		.ignore_pmdown_time = 1,
+	},
+	{
+		.name = LPASS_BE_TERT_MI2S_TX,
+		.stream_name = "Tertiary MI2S Capture",
+		.cpu_dai_name = "msm-dai-q6-mi2s.2",
+		.platform_name = "msm-pcm-routing",
+		.codecs = tfa98xx_codecs,
+		.num_codecs = 1,
+		.no_pcm = 1,
+		.dpcm_capture = 1,
+		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_TX,
+		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
+		.ops = &msm_mi2s_be_ops,
+		.ignore_suspend = 1,
+	},
+#else
 	{
 		.name = LPASS_BE_TERT_MI2S_RX,
 		.stream_name = "Tertiary MI2S Playback",
@@ -2813,38 +2968,7 @@ static struct snd_soc_dai_link msm_mi2s_be_dai_links[] = {
 		.ops = &msm_mi2s_be_ops,
 		.ignore_suspend = 1,
 	},
-#else
-	{
-		.name = LPASS_BE_TERT_MI2S_RX,
-		.stream_name = "Tertiary MI2S Playback",
-		.cpu_dai_name = "msm-dai-q6-mi2s.2",
-		.platform_name = "msm-pcm-routing",
-		.codecs = tfa98xx_codecs,
-		.num_codecs = 1,
-		.no_pcm = 1,
-		.dpcm_playback = 1,
-		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_RX,
-		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
-		.ops = &msm_mi2s_be_ops,
-		.ignore_suspend = 1,
-		.ignore_pmdown_time = 1,
-	},
-	{
-		.name = LPASS_BE_TERT_MI2S_TX,
-		.stream_name = "Tertiary MI2S Capture",
-		.cpu_dai_name = "msm-dai-q6-mi2s.2",
-		.platform_name = "msm-pcm-routing",
-		.codecs = tfa98xx_codecs,
-		.num_codecs = 1,
-		.no_pcm = 1,
-		.dpcm_capture = 1,
-		.be_id = MSM_BACKEND_DAI_TERTIARY_MI2S_TX,
-		.be_hw_params_fixup = msm_common_be_hw_params_fixup,
-		.ops = &msm_mi2s_be_ops,
-		.ignore_suspend = 1,
-	},
 #endif
-/* Huaqin add for config i2s tert dai for nxp pa by xudayi at 2018/03/03 end */
 	{
 		.name = LPASS_BE_QUAT_MI2S_RX,
 		.stream_name = "Quaternary MI2S Playback",
@@ -3230,15 +3354,13 @@ static int msm_internal_init(struct platform_device *pdev,
 		dev_dbg(&pdev->dev,
 			"%s: doesn't support external speaker pa\n",
 			__func__);
-
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
+#ifdef CONFIG_MACH_ASUS_X00T
 	ret = is_ext_hph_gpio_support(pdev, pdata);
 	if (ret < 0)
 		dev_dbg(&pdev->dev,
 			"%s: doesn't support external headphone switch\n",
 			__func__);
-	/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
-
+#endif
 	ret = of_property_read_string(pdev->dev.of_node,
 				      hs_micbias_type, &type);
 	if (ret) {
@@ -3284,7 +3406,7 @@ static int msm_internal_init(struct platform_device *pdev,
 	atomic_set(&pdata->int_mclk0_rsc_ref, 0);
 	atomic_set(&pdata->int_mclk0_enabled, false);
 
-	dev_info(&pdev->dev, "%s: default codec configured\n", __func__);
+	dev_dbg(&pdev->dev, "%s: default codec configured\n", __func__);
 
 	return 0;
 err:

@@ -1,6 +1,5 @@
 config SDFAT_FS
 	tristate "sdFAT filesystem support"
-	default y
 	select NLS
 	select NLS_UTF8
 	select NLS_CODEPAGE_437
@@ -21,6 +20,13 @@ config SDFAT_USE_FOR_EXFAT
 	depends on SDFAT_FS && !EXFAT_FS
 	help
 	  If you want to register sdFAT as available for exFAT, say Y.
+
+config SDFAT_USE_FOR_TEXFAT
+	bool "Register sdFAT as Tuxera exFAT"
+	default n
+	depends on SDFAT_FS
+	help
+	  If you want to register sdFAT as available for Tuxera exFAT (texfat), say Y.
 
 config SDFAT_USE_FOR_VFAT
 	bool "Register sdFAT as VFAT"
@@ -118,5 +124,10 @@ config SDFAT_DBG_WARNON
 
 config SDFAT_STATISTICS
 	bool "enable statistics for bigdata"
+	depends on SDFAT_FS
+	default y
+
+config SDFAT_UEVENT
+	bool "enable uevent"
 	depends on SDFAT_FS
 	default y

@@ -1,4 +1,4 @@
-/* Copyright (c) 2016-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2016-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -119,12 +119,11 @@
 	};
 };
 
-/* Huaqin modify for ZQL1650-486 by liunianliang at 2018/04/08 start */
 &qusb_phy0 {
 	qcom,qusb-phy-init-seq = <0xf8 0x80
 				0x83 0x84
-				0x81 0x88
-				0xc7 0x8c
+				0x83 0x88
+				0xc3 0x8c
 				0x30 0x08
 				0x79 0x0c
 				0x21 0x10
@@ -132,7 +131,6 @@
 				0x9f 0x1c
 				0x00 0x18>;
 };
-/* Huaqin modify for ZQL1650-486 by liunianliang at 2018/04/08 end */
 
 &pm660_gpios {
 	/* GPIO 4 (NFC_CLK_REQ) */
@@ -246,6 +244,11 @@
 	qcom,battery-data = <&qrd_batterydata>;
 	qcom,fg-jeita-thresholds = <0 5 55 55>;
 	qcom,battery-thermal-coefficients = [9d 50 ff];
+};
+
+&pm660_haptics {
+	qcom,wave-play-rate-us = <4255>;
+	qcom,vmax-mv = <1800>;
 };
 
 &i2c_2 {

@@ -2429,7 +2429,7 @@ static void mdss_dp_hdcp_cb(void *ptr, enum hdcp_states status)
 	dp->hdcp_status = status;
 
 	if (dp->alt_mode.dp_status.hpd_high)
-		queue_delayed_work(dp->workq, &dp->hdcp_cb_work, msecs_to_jiffies(250));
+		queue_delayed_work(dp->workq, &dp->hdcp_cb_work, HZ/4);
 }
 
 static int mdss_dp_hdcp_init(struct mdss_panel_data *pdata)
@@ -3029,7 +3029,7 @@ static void mdss_dp_mainlink_push_idle(struct mdss_panel_data *pdata)
 {
 	bool cable_connected;
 	struct mdss_dp_drv_pdata *dp_drv = NULL;
-	const int idle_pattern_completion_timeout_ms = 30;
+	const int idle_pattern_completion_timeout_ms = 3 * HZ / 100;
 
 	dp_drv = container_of(pdata, struct mdss_dp_drv_pdata,
 				panel_data);
@@ -3056,11 +3056,10 @@ static void mdss_dp_mainlink_push_idle(struct mdss_panel_data *pdata)
 		if (mdss_dp_aux_send_psm_request(dp_drv, true))
 			pr_err("Failed to enter low power mode\n");
 	}
-
 	reinit_completion(&dp_drv->idle_comp);
 	mdss_dp_state_ctrl(&dp_drv->ctrl_io, ST_PUSH_IDLE);
 	if (!wait_for_completion_timeout(&dp_drv->idle_comp,
-			msecs_to_jiffies(idle_pattern_completion_timeout_ms)))
+			idle_pattern_completion_timeout_ms))
 		pr_warn("PUSH_IDLE pattern timedout\n");
 
 	mutex_unlock(&dp_drv->train_mutex);
@@ -3160,7 +3159,7 @@ static int mdss_dp_event_handler(struct mdss_panel_data *pdata,
 
 			dp->hdcp_status = HDCP_STATE_AUTHENTICATING;
 			queue_delayed_work(dp->workq,
-				&dp->hdcp_cb_work, msecs_to_jiffies(500));
+				&dp->hdcp_cb_work, HZ / 2);
 		}
 		break;
 	case MDSS_EVENT_POST_PANEL_ON:
@@ -4334,7 +4333,7 @@ exit:
 	pr_debug("exit\n");
 }
 
-static int mdss_dp_usbpd_setup(struct mdss_dp_drv_pdata *dp_drv)
+static int __maybe_unused mdss_dp_usbpd_setup(struct mdss_dp_drv_pdata *dp_drv)
 {
 	int ret = 0;
 	const char *pd_phandle = "qcom,dp-usbpd-detection";
@@ -4415,12 +4414,14 @@ static int mdss_dp_probe(struct platform_device *pdev)
 	init_completion(&dp_drv->idle_comp);
 	init_completion(&dp_drv->video_comp);
 
+#ifndef CONFIG_MACH_ASUS_X00T
 	if (mdss_dp_usbpd_setup(dp_drv)) {
 		pr_err("Error usbpd setup!\n");
 		devm_kfree(&pdev->dev, dp_drv);
 		dp_drv = NULL;
 		return -EPROBE_DEFER;
 	}
+#endif
 
 	ret = mdss_retrieve_dp_ctrl_resources(pdev, dp_drv);
 	if (ret)

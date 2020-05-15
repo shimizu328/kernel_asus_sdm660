@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -11,13 +11,38 @@
  *
  */
 
+#define trace_adreno_cmdbatch_fault(...) {}
+#define trace_adreno_cmdbatch_queued(...) {}
+#define trace_adreno_cmdbatch_recovery(...) {}
+#define trace_adreno_cmdbatch_retired(...) {}
+#define trace_adreno_cmdbatch_submitted(...) {}
+#define trace_adreno_cmdbatch_sync(...) {}
+#define trace_adreno_drawctxt_invalidate(...) {}
+#define trace_adreno_drawctxt_sleep(...) {}
+#define trace_adreno_drawctxt_switch(...) {}
+#define trace_adreno_drawctxt_wait_done(...) {}
+#define trace_adreno_drawctxt_wait_start(...) {}
+#define trace_adreno_drawctxt_wake(...) {}
+#define trace_adreno_gpu_fault(...) {}
+#define trace_adreno_hw_preempt_comp_to_clear(...) {}
+#define trace_adreno_hw_preempt_token_submit(...) {}
+#define trace_adreno_ifpc_count(...) {}
+#define trace_adreno_preempt_done(...) {}
+#define trace_adreno_preempt_trigger(...) {}
+#define trace_adreno_sp_tp(...) {}
+#define trace_dispatch_queue_context(...) {}
+#define trace_kgsl_a3xx_irq_status(...) {}
+#define trace_kgsl_a4xx_irq_status(...) {}
+#define trace_kgsl_a5xx_irq_status(...) {}
+
+#if 0
 #if !defined(_ADRENO_TRACE_H) || defined(TRACE_HEADER_MULTI_READ)
 #define _ADRENO_TRACE_H
 
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM kgsl
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH .
+#define TRACE_INCLUDE_PATH ../../drivers/gpu/msm
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_FILE adreno_trace
 
@@ -371,7 +396,7 @@ TRACE_EVENT(adreno_sp_tp,
 /*
  * Tracepoint for a3xx irq. Includes status info
  */
-TRACE_EVENT(kgsl_a3xx_irq_status,
+/* TRACE_EVENT(kgsl_a3xx_irq_status,
 
 	TP_PROTO(struct adreno_device *adreno_dev, unsigned int status),
 
@@ -393,12 +418,12 @@ TRACE_EVENT(kgsl_a3xx_irq_status,
 		__entry->status ? __print_flags(__entry->status, "|",
 			A3XX_IRQ_FLAGS) : "None"
 	)
-);
+); */
 
 /*
  * Tracepoint for a4xx irq. Includes status info
  */
-TRACE_EVENT(kgsl_a4xx_irq_status,
+/* TRACE_EVENT(kgsl_a4xx_irq_status,
 
 	TP_PROTO(struct adreno_device *adreno_dev, unsigned int status),
 
@@ -420,12 +445,12 @@ TRACE_EVENT(kgsl_a4xx_irq_status,
 		__entry->status ? __print_flags(__entry->status, "|",
 			A4XX_IRQ_FLAGS) : "None"
 	)
-);
+); */
 
 /*
  * Tracepoint for a5xx irq. Includes status info
  */
-TRACE_EVENT(kgsl_a5xx_irq_status,
+/* TRACE_EVENT(kgsl_a5xx_irq_status,
 
 	TP_PROTO(struct adreno_device *adreno_dev, unsigned int status),
 
@@ -447,7 +472,7 @@ TRACE_EVENT(kgsl_a5xx_irq_status,
 		__entry->status ? __print_flags(__entry->status, "|",
 			A5XX_IRQ_FLAGS) : "None"
 	)
-);
+); */
 
 DECLARE_EVENT_CLASS(adreno_hw_preempt_template,
 	TP_PROTO(struct adreno_ringbuffer *cur_rb,
@@ -575,15 +600,15 @@ TRACE_EVENT(adreno_preempt_trigger,
 	TP_PROTO(struct adreno_ringbuffer *cur, struct adreno_ringbuffer *next),
 	TP_ARGS(cur, next),
 	TP_STRUCT__entry(
-		__field(struct adreno_ringbuffer *, cur)
-		__field(struct adreno_ringbuffer *, next)
+		__field(unsigned int, cur)
+		__field(unsigned int, next)
 	),
 	TP_fast_assign(
-		__entry->cur = cur;
-		__entry->next = next;
+		__entry->cur = cur->id;
+		__entry->next = next->id;
 	),
 	TP_printk("trigger from id=%d to id=%d",
-		__entry->cur->id, __entry->next->id
+		__entry->cur, __entry->next
 	)
 );
 
@@ -591,18 +616,19 @@ TRACE_EVENT(adreno_preempt_done,
 	TP_PROTO(struct adreno_ringbuffer *cur, struct adreno_ringbuffer *next),
 	TP_ARGS(cur, next),
 	TP_STRUCT__entry(
-		__field(struct adreno_ringbuffer *, cur)
-		__field(struct adreno_ringbuffer *, next)
+		__field(unsigned int, cur)
+		__field(unsigned int, next)
 	),
 	TP_fast_assign(
-		__entry->cur = cur;
-		__entry->next = next;
+		__entry->cur = cur->id;
+		__entry->next = next->id;
 	),
 	TP_printk("done switch to id=%d from id=%d",
-		__entry->next->id, __entry->cur->id
+		__entry->next, __entry->cur
 	)
 );
 #endif /* _ADRENO_TRACE_H */
 
 /* This part must be outside protection */
 #include <trace/define_trace.h>
+#endif
