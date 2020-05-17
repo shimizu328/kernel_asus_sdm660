@@ -12,7 +12,6 @@
 #include <linux/cpumask.h>
 #include <linux/uprobes.h>
 #include <linux/page-flags-layout.h>
-#include <linux/workqueue.h>
 #include <asm/page.h>
 #include <asm/mmu.h>
 
@@ -36,18 +35,12 @@ struct mem_cgroup;
  * a page, though if it is a pagecache page, rmap structures can tell us
  * who is mapping it.
  *
- * SLUB uses cmpxchg_double() to atomically update its freelist and
- * counters.  That requires that freelist & counters be adjacent and
- * double-word aligned.  We align all struct pages to double-word
- * boundaries, and ensure that 'freelist' is aligned within the
- * struct.
+ * The objects in struct page are organized in double word blocks in
+ * order to allows us to use atomic double word operations on portions
+ * of struct page. That is currently only used by slub but the arrangement
+ * allows the use of atomic double word operations on the flags/mapping
+ * and lru list pointers also.
  */
-#ifdef CONFIG_HAVE_ALIGNED_STRUCT_PAGE
-#define _struct_page_alignment	__aligned(2 * sizeof(unsigned long))
-#else
-#define _struct_page_alignment
-#endif
-
 struct page {
 	/* First double word block */
 	unsigned long flags;		/* Atomic flags, some possibly
@@ -119,6 +112,8 @@ struct page {
 	};
 
 	/*
+	 * Third double word block
+	 *
 	 * WARNING: bit 0 of the first word encode PageTail(). That means
 	 * the rest users of the storage space MUST NOT use the bit to
 	 * avoid collision and false-positive PageTail().
@@ -148,9 +143,19 @@ struct page {
 			unsigned long compound_head; /* If bit zero is set */
 
 			/* First tail page only */
-			unsigned char compound_dtor;
-			unsigned char compound_order;
-			/* two/six bytes available here */
+#ifdef CONFIG_64BIT
+			/*
+			 * On 64 bit system we have enough space in struct page
+			 * to encode compound_dtor and compound_order with
+			 * unsigned int. It can help compiler generate better or
+			 * smaller code on some archtectures.
+			 */
+			unsigned int compound_dtor;
+			unsigned int compound_order;
+#else
+			unsigned short int compound_dtor;
+			unsigned short int compound_order;
+#endif
 		};
 
 #if defined(CONFIG_TRANSPARENT_HUGEPAGE) && USE_SPLIT_PMD_PTLOCKS
@@ -164,14 +169,15 @@ struct page {
 #endif
 	};
 
+	/* Remainder is not double word aligned */
 	union {
-		/*
-		 * Mapping-private opaque data:
-		 * Usually used for buffer_heads if PagePrivate
-		 * Used for swp_entry_t if PageSwapCache
-		 * Indicates order in the buddy system if PageBuddy
-		 */
-		unsigned long private;
+		unsigned long private;		/* Mapping-private opaque data:
+					 	 * usually used for buffer_heads
+						 * if PagePrivate set; used for
+						 * swp_entry_t if PageSwapCache;
+						 * indicates order in the buddy
+						 * system if PG_buddy is set.
+						 */
 #if USE_SPLIT_PTE_PTLOCKS
 #if ALLOC_SPLIT_PTLOCKS
 		spinlock_t *ptl;
@@ -201,10 +207,6 @@ struct page {
 					   not kmapped, ie. highmem) */
 #endif /* WANT_PAGE_VIRTUAL */
 
-#ifdef CONFIG_BLK_DEV_IO_TRACE
-	struct task_struct *tsk_dirty;	/* task that sets this page dirty */
-#endif
-
 #ifdef CONFIG_KMEMCHECK
 	/*
 	 * kmemcheck wants to track the status of each byte in a page; this
@@ -216,7 +218,15 @@ struct page {
 #ifdef LAST_CPUPID_NOT_IN_PAGE_FLAGS
 	int _last_cpupid;
 #endif
-} _struct_page_alignment;
+}
+/*
+ * The struct page can be forced to be double word aligned so that atomic ops
+ * on double words work. The SLUB allocator can make use of such a feature.
+ */
+#ifdef CONFIG_HAVE_ALIGNED_STRUCT_PAGE
+	__aligned(2 * sizeof(unsigned long))
+#endif
+;
 
 struct page_frag {
 	struct page *page;
@@ -313,18 +323,11 @@ struct vm_area_struct {
 	/*
 	 * For areas with an address space and backing store,
 	 * linkage into the address_space->i_mmap interval tree.
-	 *
-	 * For private anonymous mappings, a pointer to a null terminated string
-	 * in the user process containing the name given to the vma, or NULL
-	 * if unnamed.
 	 */
-	union {
-		struct {
-			struct rb_node rb;
-			unsigned long rb_subtree_last;
-		} shared;
-		const char __user *anon_name;
-	};
+	struct {
+		struct rb_node rb;
+		unsigned long rb_subtree_last;
+	} shared;
 
 	/*
 	 * A file's MAP_PRIVATE vma can be in both i_mmap tree and anon_vma
@@ -513,11 +516,6 @@ struct mm_struct {
 #ifdef CONFIG_HUGETLB_PAGE
 	atomic_long_t hugetlb_usage;
 #endif
-#ifdef CONFIG_MSM_APP_SETTINGS
-	int app_setting;
-#endif
-
-	struct work_struct async_put_work;
 };
 
 static inline void mm_init_cpumask(struct mm_struct *mm)
@@ -597,14 +595,5 @@ enum tlb_flush_reason {
 typedef struct {
 	unsigned long val;
 } swp_entry_t;
-
-/* Return the name for an anonymous mapping or NULL for a file-backed mapping */
-static inline const char __user *vma_get_anon_name(struct vm_area_struct *vma)
-{
-	if (vma->vm_file)
-		return NULL;
-
-	return vma->anon_name;
-}
 
 #endif /* _LINUX_MM_TYPES_H */

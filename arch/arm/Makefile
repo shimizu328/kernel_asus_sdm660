@@ -133,7 +133,7 @@ endif
 KBUILD_CFLAGS	+=$(CFLAGS_ABI) $(CFLAGS_ISA) $(arch-y) $(tune-y) $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,)) -msoft-float -Uarm
 KBUILD_AFLAGS	+=$(CFLAGS_ABI) $(AFLAGS_ISA) $(arch-y) $(tune-y) -include asm/unified.h -msoft-float
 
-CHECKFLAGS	+= -D__arm__ -m32
+CHECKFLAGS	+= -D__arm__
 
 #Default value
 head-y		:= arch/arm/kernel/head$(MMUEXT).o
@@ -296,8 +296,6 @@ libs-y				:= arch/arm/lib/ $(libs-y)
 # Default target when executing plain make
 ifeq ($(CONFIG_XIP_KERNEL),y)
 KBUILD_IMAGE := xipImage
-else ifeq ($(CONFIG_BUILD_ARM_APPENDED_DTB_IMAGE),y)
-KBUILD_IMAGE := zImage-dtb
 else
 KBUILD_IMAGE := zImage
 endif
@@ -306,8 +304,6 @@ endif
 ifeq ($(CONFIG_USE_OF),y)
 KBUILD_DTBS := dtbs
 endif
-
-DTSSUBDIR := qcom
 
 all:	$(KBUILD_IMAGE) $(KBUILD_DTBS)
 
@@ -336,18 +332,19 @@ $(INSTALL_TARGETS):
 %.dtb: | scripts
 	$(Q)$(MAKE) $(build)=$(boot)/dts MACHINE=$(MACHINE) $(boot)/dts/$@
 
+PHONY += dtbs dtbs_install
+
+dtbs: prepare scripts
+	$(Q)$(MAKE) $(build)=$(boot)/dts
+
+dtbs_install:
+	$(Q)$(MAKE) $(dtbinst)=$(boot)/dts
+
 PHONY += vdso_install
 vdso_install:
 ifeq ($(CONFIG_VDSO),y)
 	$(Q)$(MAKE) $(build)=arch/arm/vdso $@
 endif
-
-dtbs: scripts
-	$(Q)$(MAKE) $(build)=$(boot)/dts MACHINE=$(MACHINE) dtbs
-	$(foreach DIR, $(DTSSUBDIR), $(Q)$(MAKE) $(build)=$(boot)/dts/$(DIR) MACHINE=$(MACHINE) dtbs)
-
-zImage-dtb: vmlinux scripts dtbs
-	$(Q)$(MAKE) $(build)=$(boot) MACHINE=$(MACHINE) DTSSUBDIR=$(DTSSUBDIR) $(boot)/$@
 
 # We use MRPROPER_FILES and CLEAN_FILES now
 archclean:

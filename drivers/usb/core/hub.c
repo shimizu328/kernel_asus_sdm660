@@ -48,11 +48,6 @@ static void hub_event(struct work_struct *work);
 /* synchronize hub-port add/remove and peering operations */
 DEFINE_MUTEX(usb_port_peer_mutex);
 
-static bool skip_extended_resume_delay = 1;
-module_param(skip_extended_resume_delay, bool, S_IRUGO | S_IWUSR);
-MODULE_PARM_DESC(skip_extended_resume_delay,
-		"removes extra delay added to finish bus resume");
-
 /* cycle leds on hubs that aren't blinking for attention */
 static bool blinkenlights = 0;
 module_param(blinkenlights, bool, S_IRUGO);
@@ -627,12 +622,6 @@ void usb_kick_hub_wq(struct usb_device *hdev)
 		kick_hub_wq(hub);
 }
 
-void usb_flush_hub_wq(void)
-{
-	flush_workqueue(hub_wq);
-}
-EXPORT_SYMBOL(usb_flush_hub_wq);
-
 /*
  * Let the USB core know that a USB 3.0 device has sent a Function Wake Device
  * Notification, which indicates it had initiated remote wakeup.
@@ -1186,6 +1175,11 @@ static void hub_activate(struct usb_hub *hub, enum hub_activation_type type)
 #ifdef CONFIG_PM
 			udev->reset_resume = 1;
 #endif
+			/* Don't set the change_bits when the device
+			 * was powered off.
+			 */
+			if (test_bit(port1, hub->power_bits))
+				set_bit(port1, hub->change_bits);
 
 		} else {
 			/* The power session is gone; tell hub_wq */
@@ -2950,6 +2944,15 @@ static int check_port_resume_type(struct usb_device *udev,
 		if (portchange & USB_PORT_STAT_C_ENABLE)
 			usb_clear_port_feature(hub->hdev, port1,
 					USB_PORT_FEAT_C_ENABLE);
+
+		/*
+		 * Whatever made this reset-resume necessary may have
+		 * turned on the port1 bit in hub->change_bits.  But after
+		 * a successful reset-resume we want the bit to be clear;
+		 * if it was on it would indicate that something happened
+		 * following the reset-resume.
+		 */
+		clear_bit(port1, hub->change_bits);
 	}
 
 	return status;
@@ -3420,9 +3423,7 @@ int usb_port_resume(struct usb_device *udev, pm_message_t msg)
 		/* drive resume for USB_RESUME_TIMEOUT msec */
 		dev_dbg(&udev->dev, "usb %sresume\n",
 				(PMSG_IS_AUTO(msg) ? "auto-" : ""));
-		if (!skip_extended_resume_delay)
-			usleep_range(USB_RESUME_TIMEOUT * 1000,
-					(USB_RESUME_TIMEOUT + 1) * 1000);
+		msleep(USB_RESUME_TIMEOUT);
 
 		/* Virtual root hubs can trigger on GET_PORT_STATUS to
 		 * stop resume signaling.  Then finish the resume
@@ -3431,7 +3432,7 @@ int usb_port_resume(struct usb_device *udev, pm_message_t msg)
 		status = hub_port_status(hub, port1, &portstatus, &portchange);
 
 		/* TRSMRCY = 10 msec */
-		usleep_range(10000, 10500);
+		msleep(10);
 	}
 
  SuspendCleared:
@@ -4333,8 +4334,6 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 	enum usb_device_speed	oldspeed = udev->speed;
 	const char		*speed;
 	int			devnum = udev->devnum;
-	char			*error_event[] = {
-				"USB_DEVICE_ERROR=Device_No_Response", NULL };
 
 	/* root hub ports have a slightly longer reset period
 	 * (from USB 2.0 spec, section 7.1.7.5)
@@ -4510,8 +4509,6 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 				if (r != -ENODEV)
 					dev_err(&udev->dev, "device descriptor read/64, error %d\n",
 							r);
-				kobject_uevent_env(&udev->parent->dev.kobj,
-						KOBJ_CHANGE, error_event);
 				retval = -EMSGSIZE;
 				continue;
 			}
@@ -4564,8 +4561,6 @@ hub_port_init(struct usb_hub *hub, struct usb_device *udev, int port1,
 				dev_err(&udev->dev,
 					"device descriptor read/8, error %d\n",
 					retval);
-			kobject_uevent_env(&udev->parent->dev.kobj,
-						KOBJ_CHANGE, error_event);
 			if (retval >= 0)
 				retval = -EMSGSIZE;
 		} else {

@@ -871,12 +871,6 @@ static int audit_receive_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 				return err;
 		}
 		if (s.mask & AUDIT_STATUS_PID) {
-			/* NOTE: we are using task_tgid_vnr() below because
-			 *       the s.pid value is relative to the namespace
-			 *       of the caller; at present this doesn't matter
-			 *       much since you can really only run auditd
-			 *       from the initial pid namespace, but something
-			 *       to keep in mind if this changes */
 			int new_pid = s.pid;
 
 			if ((!new_pid) && (task_tgid_vnr(current) != audit_pid))
@@ -925,6 +919,9 @@ static int audit_receive_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	case AUDIT_FIRST_USER_MSG2 ... AUDIT_LAST_USER_MSG2:
 		if (!audit_enabled && msg_type != AUDIT_USER_AVC)
 			return 0;
+		/* exit early if there isn't at least one character to print */
+		if (data_len < 2)
+			return -EINVAL;
 
 		err = audit_filter_user(msg_type);
 		if (err == 1) { /* match or error */
@@ -1898,7 +1895,7 @@ void audit_log_task_info(struct audit_buffer *ab, struct task_struct *tsk)
 			 " euid=%u suid=%u fsuid=%u"
 			 " egid=%u sgid=%u fsgid=%u tty=%s ses=%u",
 			 task_ppid_nr(tsk),
-			 task_tgid_nr(tsk),
+			 task_pid_nr(tsk),
 			 from_kuid(&init_user_ns, audit_get_loginuid(tsk)),
 			 from_kuid(&init_user_ns, cred->uid),
 			 from_kgid(&init_user_ns, cred->gid),

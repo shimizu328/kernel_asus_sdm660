@@ -2665,8 +2665,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	}
 
 	swap_free(entry);
-	if ((PageSwapCache(page) && vm_swap_full(page_swap_info(page))) ||
-		(vma->vm_flags & VM_LOCKED) || PageMlocked(page))
+	if (vm_swap_full() || (vma->vm_flags & VM_LOCKED) || PageMlocked(page))
 		try_to_free_swap(page);
 	unlock_page(page);
 	if (page != swapcache) {
@@ -2694,7 +2693,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 unlock:
 	pte_unmap_unlock(page_table, ptl);
 out:
-	return ret | VM_FAULT_SWAP;
+	return ret;
 out_nomap:
 	mem_cgroup_cancel_charge(page, memcg);
 	pte_unmap_unlock(page_table, ptl);
@@ -2706,7 +2705,7 @@ out_release:
 		unlock_page(swapcache);
 		page_cache_release(swapcache);
 	}
-	return ret | VM_FAULT_SWAP;
+	return ret;
 }
 
 /*
@@ -2881,7 +2880,7 @@ void do_set_pte(struct vm_area_struct *vma, unsigned long address,
 }
 
 static unsigned long fault_around_bytes __read_mostly =
-	rounddown_pow_of_two(4096);
+	rounddown_pow_of_two(65536);
 
 #ifdef CONFIG_DEBUG_FS
 static int fault_around_bytes_get(void *data, u64 *val)

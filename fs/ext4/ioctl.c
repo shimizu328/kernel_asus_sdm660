@@ -105,7 +105,7 @@ static long swap_inode_boot_loader(struct super_block *sb,
 	if (!inode_owner_or_capable(inode) || !capable(CAP_SYS_ADMIN))
 		return -EPERM;
 
-	inode_bl = ext4_iget(sb, EXT4_BOOT_LOADER_INO);
+	inode_bl = ext4_iget(sb, EXT4_BOOT_LOADER_INO, EXT4_IGET_SPECIAL);
 	if (IS_ERR(inode_bl))
 		return PTR_ERR(inode_bl);
 	ei_bl = EXT4_I(inode_bl);
@@ -587,21 +587,16 @@ resizefs_out:
 		return err;
 	}
 
-	case FIDTRIM:
 	case FITRIM:
 	{
 		struct request_queue *q = bdev_get_queue(sb->s_bdev);
 		struct fstrim_range range;
 		int ret = 0;
-		int flags  = cmd == FIDTRIM ? BLKDEV_DISCARD_SECURE : 0;
 
 		if (!capable(CAP_SYS_ADMIN))
 			return -EPERM;
 
 		if (!blk_queue_discard(q))
-			return -EOPNOTSUPP;
-
-		if ((flags & BLKDEV_DISCARD_SECURE) && !blk_queue_secdiscard(q))
 			return -EOPNOTSUPP;
 
 		/*
@@ -617,7 +612,7 @@ resizefs_out:
 
 		range.minlen = max((unsigned int)range.minlen,
 				   q->limits.discard_granularity);
-		ret = ext4_trim_fs(sb, &range, flags);
+		ret = ext4_trim_fs(sb, &range);
 		if (ret < 0)
 			return ret;
 
@@ -633,6 +628,9 @@ resizefs_out:
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
 		struct ext4_encryption_policy policy;
 		int err = 0;
+
+		if (!ext4_has_feature_encrypt(sb))
+			return -EOPNOTSUPP;
 
 		if (copy_from_user(&policy,
 				   (struct ext4_encryption_policy __user *)arg,

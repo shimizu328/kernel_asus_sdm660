@@ -210,6 +210,14 @@ start_thread(struct pt_regs * regs, unsigned long pc, unsigned long sp)
 }
 EXPORT_SYMBOL(start_thread);
 
+/*
+ * Free current thread data structures etc..
+ */
+void
+exit_thread(void)
+{
+}
+
 void
 flush_thread(void)
 {

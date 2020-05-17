@@ -635,6 +635,15 @@ static int sfq_change(struct Qdisc *sch, struct nlattr *opt)
 	if (ctl->divisor &&
 	    (!is_power_of_2(ctl->divisor) || ctl->divisor > 65536))
 		return -EINVAL;
+
+	/* slot->allot is a short, make sure quantum is not too big. */
+	if (ctl->quantum) {
+		unsigned int scaled = SFQ_ALLOT_SIZE(ctl->quantum);
+
+		if (scaled <= 0 || scaled > SHRT_MAX)
+			return -EINVAL;
+	}
+
 	if (ctl_v1 && !red_check_params(ctl_v1->qth_min, ctl_v1->qth_max,
 					ctl_v1->Wlog))
 		return -EINVAL;
@@ -818,6 +827,8 @@ static unsigned long sfq_get(struct Qdisc *sch, u32 classid)
 static unsigned long sfq_bind(struct Qdisc *sch, unsigned long parent,
 			      u32 classid)
 {
+	/* we cannot bypass queue discipline anymore */
+	sch->flags &= ~TCQ_F_CAN_BYPASS;
 	return 0;
 }
 

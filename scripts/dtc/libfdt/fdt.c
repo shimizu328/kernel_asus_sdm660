@@ -71,38 +71,23 @@ int fdt_check_header(const void *fdt)
 		return -FDT_ERR_BADMAGIC;
 	}
 
-	if (fdt_off_dt_struct(fdt) > (UINT_MAX - fdt_size_dt_struct(fdt)))
-		return FDT_ERR_BADOFFSET;
-
-	if (fdt_off_dt_strings(fdt) > (UINT_MAX -  fdt_size_dt_strings(fdt)))
-		return FDT_ERR_BADOFFSET;
-
-	if ((fdt_off_dt_struct(fdt) + fdt_size_dt_struct(fdt))
-	    > fdt_totalsize(fdt))
-		return FDT_ERR_BADOFFSET;
-
-	if ((fdt_off_dt_strings(fdt) + fdt_size_dt_strings(fdt))
-	    > fdt_totalsize(fdt))
-		return FDT_ERR_BADOFFSET;
-
 	return 0;
 }
 
 const void *fdt_offset_ptr(const void *fdt, int offset, unsigned int len)
 {
-	unsigned absoffset = offset + fdt_off_dt_struct(fdt);
-
-	if ((absoffset < offset)
-	    || ((absoffset + len) < absoffset)
-	    || (absoffset + len) > fdt_totalsize(fdt))
-		return NULL;
+	const char *p;
 
 	if (fdt_version(fdt) >= 0x11)
 		if (((offset + len) < offset)
 		    || ((offset + len) > fdt_size_dt_struct(fdt)))
 			return NULL;
 
-	return _fdt_offset_ptr(fdt, offset);
+	p = _fdt_offset_ptr(fdt, offset);
+
+	if (p + len < p)
+		return NULL;
+	return p;
 }
 
 uint32_t fdt_next_tag(const void *fdt, int startoffset, int *nextoffset)

@@ -45,7 +45,6 @@
 #include <net/tcp_states.h>
 #include <net/ip6_checksum.h>
 #include <net/xfrm.h>
-#include <net/inet_hashtables.h>
 #include <net/inet6_hashtables.h>
 #include <net/busy_poll.h>
 
@@ -802,10 +801,10 @@ static int __udp6_lib_mcast_deliver(struct net *net, struct sk_buff *skb,
 
 	if (use_hash2) {
 		hash2_any = udp6_portaddr_hash(net, &in6addr_any, hnum) &
-			    udp_table.mask;
-		hash2 = udp6_portaddr_hash(net, daddr, hnum) & udp_table.mask;
+			    udptable->mask;
+		hash2 = udp6_portaddr_hash(net, daddr, hnum) & udptable->mask;
 start_lookup:
-		hslot = &udp_table.hash2[hash2];
+		hslot = &udptable->hash2[hash2];
 		offset = offsetof(typeof(*sk), __sk_common.skc_portaddr_node);
 	}
 
@@ -957,71 +956,6 @@ discard:
 	UDP6_INC_STATS_BH(net, UDP_MIB_INERRORS, proto == IPPROTO_UDPLITE);
 	kfree_skb(skb);
 	return 0;
-}
-
-static struct sock *__udp6_lib_demux_lookup(struct net *net,
-			__be16 loc_port, const struct in6_addr *loc_addr,
-			__be16 rmt_port, const struct in6_addr *rmt_addr,
-			int dif)
-{
-	struct sock *sk;
-	struct hlist_nulls_node *hnode;
-	unsigned short hnum = ntohs(loc_port);
-	unsigned int hash2 = udp6_portaddr_hash(net, loc_addr, hnum);
-	unsigned int slot2 = hash2 & udp_table.mask;
-	struct udp_hslot *hslot2 = &udp_table.hash2[slot2];
-
-	const __portpair ports = INET_COMBINED_PORTS(rmt_port, hnum);
-
-	udp_portaddr_for_each_entry_rcu(sk, hnode, &hslot2->head) {
-		if (sk->sk_state == TCP_ESTABLISHED &&
-		    INET6_MATCH(sk, net, rmt_addr, loc_addr, ports, dif))
-			return sk;
-		/* Only check first socket in chain */
-		break;
-	}
-	return NULL;
-}
-
-static void udp_v6_early_demux(struct sk_buff *skb)
-{
-	struct net *net = dev_net(skb->dev);
-	const struct udphdr *uh;
-	struct sock *sk;
-	struct dst_entry *dst;
-	int dif = skb->dev->ifindex;
-
-	if (!pskb_may_pull(skb, skb_transport_offset(skb) +
-	    sizeof(struct udphdr)))
-		return;
-
-	uh = udp_hdr(skb);
-
-	if (skb->pkt_type == PACKET_HOST)
-		sk = __udp6_lib_demux_lookup(net, uh->dest,
-					     &ipv6_hdr(skb)->daddr,
-					     uh->source, &ipv6_hdr(skb)->saddr,
-					     dif);
-	else
-		return;
-
-	if (!sk || !atomic_inc_not_zero_hint(&sk->sk_refcnt, 2))
-		return;
-
-	skb->sk = sk;
-	skb->destructor = sock_efree;
-	dst = READ_ONCE(sk->sk_rx_dst);
-
-	if (dst)
-		dst = dst_check(dst, inet6_sk(sk)->rx_dst_cookie);
-	if (dst) {
-		if (dst->flags & DST_NOCACHE) {
-			if (likely(atomic_inc_not_zero(&dst->__refcnt)))
-				skb_dst_set(skb, dst);
-		} else {
-			skb_dst_set_noref(skb, dst);
-		}
-	}
 }
 
 static __inline__ int udpv6_rcv(struct sk_buff *skb)
@@ -1315,7 +1249,6 @@ do_udp_sendmsg:
 		fl6.flowi6_oif = np->sticky_pktinfo.ipi6_ifindex;
 
 	fl6.flowi6_mark = sk->sk_mark;
-	fl6.flowi6_uid = sk->sk_uid;
 
 	if (msg->msg_controllen) {
 		opt = &opt_space;
@@ -1532,7 +1465,6 @@ int compat_udpv6_getsockopt(struct sock *sk, int level, int optname,
 #endif
 
 static const struct inet6_protocol udpv6_protocol = {
-	.early_demux	=	udp_v6_early_demux,
 	.handler	=	udpv6_rcv,
 	.err_handler	=	udpv6_err,
 	.flags		=	INET6_PROTO_NOPOLICY|INET6_PROTO_FINAL,
@@ -1625,7 +1557,6 @@ struct proto udpv6_prot = {
 	.compat_getsockopt = compat_udpv6_getsockopt,
 #endif
 	.clear_sk	   = udp_v6_clear_sk,
-	.diag_destroy      = udp_abort,
 };
 
 static struct inet_protosw udpv6_protosw = {

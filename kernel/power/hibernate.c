@@ -30,7 +30,6 @@
 #include <linux/genhd.h>
 #include <linux/ktime.h>
 #include <trace/events/power.h>
-#include <soc/qcom/boot_stats.h>
 
 #include "power.h"
 
@@ -298,11 +297,11 @@ static int create_image(int platform_mode)
 
 	in_suspend = 1;
 	save_processor_state();
-//	trace_suspend_resume(TPS("machine_suspend"), PM_EVENT_HIBERNATE, true);
+	trace_suspend_resume(TPS("machine_suspend"), PM_EVENT_HIBERNATE, true);
 	error = swsusp_arch_suspend();
 	/* Restore control flow magically appears here */
 	restore_processor_state();
-//	trace_suspend_resume(TPS("machine_suspend"), PM_EVENT_HIBERNATE, false);
+	trace_suspend_resume(TPS("machine_suspend"), PM_EVENT_HIBERNATE, false);
 	if (error)
 		printk(KERN_ERR "PM: Error %d creating hibernation image\n",
 			error);
@@ -470,7 +469,6 @@ static int resume_target_kernel(bool platform_mode)
 	touch_softlockup_watchdog();
 
 	syscore_resume();
-	place_marker("PM: Image Restoration failed!");
 
  Enable_irqs:
 	local_irq_enable();
@@ -649,7 +647,7 @@ static void power_down(void)
  */
 int hibernate(void)
 {
-	int error, nr_calls = 0;
+	int error;
 
 	if (!hibernation_available()) {
 		pr_debug("PM: Hibernation not available.\n");
@@ -664,11 +662,9 @@ int hibernate(void)
 	}
 
 	pm_prepare_console();
-	error = __pm_notifier_call_chain(PM_HIBERNATION_PREPARE, -1, &nr_calls);
-	if (error) {
-		nr_calls--;
+	error = pm_notifier_call_chain(PM_HIBERNATION_PREPARE);
+	if (error)
 		goto Exit;
-	}
 
 	printk(KERN_INFO "PM: Syncing filesystems ... ");
 	sys_sync();
@@ -707,7 +703,6 @@ int hibernate(void)
 		pm_restore_gfp_mask();
 	} else {
 		pr_debug("PM: Image restored successfully.\n");
-		place_marker("PM: Image restored!");
 	}
 
  Free_bitmaps:
@@ -719,7 +714,7 @@ int hibernate(void)
 	/* Don't bother checking whether freezer_test_done is true */
 	freezer_test_done = false;
  Exit:
-	__pm_notifier_call_chain(PM_POST_HIBERNATION, nr_calls, NULL);
+	pm_notifier_call_chain(PM_POST_HIBERNATION);
 	pm_restore_console();
 	atomic_inc(&snapshot_device_available);
  Unlock:
@@ -745,7 +740,7 @@ int hibernate(void)
  */
 static int software_resume(void)
 {
-	int error, nr_calls = 0;
+	int error;
 	unsigned int flags;
 
 	/*
@@ -832,11 +827,9 @@ static int software_resume(void)
 	}
 
 	pm_prepare_console();
-	error = __pm_notifier_call_chain(PM_RESTORE_PREPARE, -1, &nr_calls);
-	if (error) {
-		nr_calls--;
+	error = pm_notifier_call_chain(PM_RESTORE_PREPARE);
+	if (error)
 		goto Close_Finish;
-	}
 
 	pr_debug("PM: Preparing processes for restore.\n");
 	error = freeze_processes();
@@ -862,7 +855,7 @@ static int software_resume(void)
 	unlock_device_hotplug();
 	thaw_processes();
  Finish:
-	__pm_notifier_call_chain(PM_POST_RESTORE, nr_calls, NULL);
+	pm_notifier_call_chain(PM_POST_RESTORE);
 	pm_restore_console();
 	atomic_inc(&snapshot_device_available);
 	/* For success case, the suspend path will release the lock */
@@ -1166,22 +1159,6 @@ static int __init kaslr_nohibernate_setup(char *str)
 	return nohibernate_setup(str);
 }
 
-static int __init page_poison_nohibernate_setup(char *str)
-{
-#ifdef CONFIG_PAGE_POISONING_ZERO
-	/*
-	 * The zeroing option for page poison skips the checks on alloc.
-	 * since hibernation doesn't save free pages there's no way to
-	 * guarantee the pages will still be zeroed.
-	 */
-	if (!strcmp(str, "on")) {
-		pr_info("Disabling hibernation due to page poisoning\n");
-		return nohibernate_setup(str);
-	}
-#endif
-	return 1;
-}
-
 __setup("noresume", noresume_setup);
 __setup("resume_offset=", resume_offset_setup);
 __setup("resume=", resume_setup);
@@ -1190,4 +1167,3 @@ __setup("resumewait", resumewait_setup);
 __setup("resumedelay=", resumedelay_setup);
 __setup("nohibernate", nohibernate_setup);
 __setup("kaslr", kaslr_nohibernate_setup);
-__setup("page_poison=", page_poison_nohibernate_setup);

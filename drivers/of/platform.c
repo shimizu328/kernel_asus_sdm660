@@ -21,7 +21,6 @@
 #include <linux/of_device.h>
 #include <linux/of_irq.h>
 #include <linux/of_platform.h>
-#include <linux/of_reserved_mem.h>
 #include <linux/platform_device.h>
 
 const struct of_device_id of_default_bus_match_table[] = {
@@ -140,7 +139,7 @@ struct platform_device *of_device_alloc(struct device_node *np,
 	}
 
 	dev->dev.of_node = of_node_get(np);
-	dev->dev.parent = parent;
+	dev->dev.parent = parent ? : &platform_bus;
 
 	if (bus_id)
 		dev_set_name(&dev->dev, "%s", bus_id);
@@ -186,7 +185,6 @@ static struct platform_device *of_platform_device_create_pdata(
 	dev->dev.platform_data = platform_data;
 	of_dma_configure(&dev->dev, dev->dev.of_node);
 	of_msi_configure(&dev->dev, dev->dev.of_node);
-	of_reserved_mem_device_init(&dev->dev);
 
 	if (of_device_add(dev) != 0) {
 		of_dma_deconfigure(&dev->dev);
@@ -243,7 +241,7 @@ static struct amba_device *of_amba_device_create(struct device_node *node,
 
 	/* setup generic device info */
 	dev->dev.of_node = of_node_get(node);
-	dev->dev.parent = parent;
+	dev->dev.parent = parent ? : &platform_bus;
 	dev->dev.platform_data = platform_data;
 	if (bus_id)
 		dev_set_name(&dev->dev, "%s", bus_id);

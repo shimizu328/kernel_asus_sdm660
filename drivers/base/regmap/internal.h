@@ -85,13 +85,6 @@ struct regmap {
 
 	struct list_head debugfs_off_cache;
 	struct mutex cache_lock;
-
-	unsigned int dump_address;
-	unsigned int dump_count;
-#endif
-#ifdef CONFIG_AINUR_DTS_HW
-	struct list_head proc_off_cache;
-	struct mutex proc_cache_lock;
 #endif
 
 	unsigned int max_register;
@@ -251,10 +244,6 @@ int regcache_lookup_reg(struct regmap *map, unsigned int reg);
 
 int _regmap_raw_write(struct regmap *map, unsigned int reg,
 		      const void *val, size_t val_len);
-
-int _regmap_raw_multi_reg_write(struct regmap *map,
-				const struct reg_sequence *regs,
-				size_t num_regs);
 
 void regmap_async_complete_cb(struct regmap_async *async, int ret);
 

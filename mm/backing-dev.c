@@ -237,7 +237,6 @@ static __init int bdi_class_init(void)
 
 	bdi_class->dev_groups = bdi_dev_groups;
 	bdi_debug_init();
-
 	return 0;
 }
 postcore_initcall(bdi_class_init);
@@ -782,7 +781,6 @@ int bdi_init(struct backing_dev_info *bdi)
 
 	bdi->dev = NULL;
 
-	kref_init(&bdi->refcnt);
 	bdi->min_ratio = 0;
 	bdi->max_ratio = 100;
 	bdi->max_prop_frac = FPROP_FRAC_BASE;
@@ -797,22 +795,6 @@ int bdi_init(struct backing_dev_info *bdi)
 	return ret;
 }
 EXPORT_SYMBOL(bdi_init);
-
-struct backing_dev_info *bdi_alloc_node(gfp_t gfp_mask, int node_id)
-{
-	struct backing_dev_info *bdi;
-
-	bdi = kmalloc_node(sizeof(struct backing_dev_info),
-			   gfp_mask | __GFP_ZERO, node_id);
-	if (!bdi)
-		return NULL;
-
-	if (bdi_init(bdi)) {
-		kfree(bdi);
-		return NULL;
-	}
-	return bdi;
-}
 
 int bdi_register(struct backing_dev_info *bdi, struct device *parent,
 		const char *fmt, ...)
@@ -838,7 +820,7 @@ int bdi_register(struct backing_dev_info *bdi, struct device *parent,
 	list_add_tail_rcu(&bdi->bdi_list, &bdi_list);
 	spin_unlock_bh(&bdi_lock);
 
-//	trace_writeback_bdi_register(bdi);
+	trace_writeback_bdi_register(bdi);
 	return 0;
 }
 EXPORT_SYMBOL(bdi_register);
@@ -894,24 +876,10 @@ void bdi_unregister(struct backing_dev_info *bdi)
 	}
 }
 
-static void bdi_exit(struct backing_dev_info *bdi)
+void bdi_exit(struct backing_dev_info *bdi)
 {
 	WARN_ON_ONCE(bdi->dev);
 	wb_exit(&bdi->wb);
-}
-
-static void release_bdi(struct kref *ref)
-{
-	struct backing_dev_info *bdi =
-			container_of(ref, struct backing_dev_info, refcnt);
-
-	bdi_exit(bdi);
-	kfree(bdi);
-}
-
-void bdi_put(struct backing_dev_info *bdi)
-{
-	kref_put(&bdi->refcnt, release_bdi);
 }
 
 void bdi_destroy(struct backing_dev_info *bdi)
@@ -988,7 +956,7 @@ EXPORT_SYMBOL(set_wb_congested);
 long congestion_wait(int sync, long timeout)
 {
 	long ret;
-//	unsigned long start = jiffies;
+	unsigned long start = jiffies;
 	DEFINE_WAIT(wait);
 	wait_queue_head_t *wqh = &congestion_wqh[sync];
 
@@ -996,8 +964,8 @@ long congestion_wait(int sync, long timeout)
 	ret = io_schedule_timeout(timeout);
 	finish_wait(wqh, &wait);
 
-//	trace_writeback_congestion_wait(jiffies_to_usecs(timeout),
-//					jiffies_to_usecs(jiffies - start));
+	trace_writeback_congestion_wait(jiffies_to_usecs(timeout),
+					jiffies_to_usecs(jiffies - start));
 
 	return ret;
 }
@@ -1064,8 +1032,8 @@ long wait_iff_congested(struct zone *zone, int sync, long timeout)
 	finish_wait(wqh, &wait);
 
 out:
-//	trace_writeback_wait_iff_congested(jiffies_to_usecs(timeout),
-//					jiffies_to_usecs(jiffies - start));
+	trace_writeback_wait_iff_congested(jiffies_to_usecs(timeout),
+					jiffies_to_usecs(jiffies - start));
 
 	return ret;
 }

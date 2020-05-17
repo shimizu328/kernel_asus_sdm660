@@ -25,7 +25,6 @@
 #include <linux/async.h>
 #include <linux/pm_runtime.h>
 #include <linux/pinctrl/devinfo.h>
-#include <linux/platform_device.h>
 
 #include "base.h"
 #include "power/power.h"
@@ -172,49 +171,26 @@ static void driver_deferred_probe_trigger(void)
 	queue_work(deferred_wq, &deferred_probe_work);
 }
 
-static void enable_trigger_defer_cycle(void)
-{
-	driver_deferred_probe_enable = true;
-	driver_deferred_probe_trigger();
-	/*
-	 * Sort as many dependencies as possible before the next initcall
-	 * level
-	 */
-	flush_workqueue(deferred_wq);
-}
-
 /**
  * deferred_probe_initcall() - Enable probing of deferred devices
  *
  * We don't want to get in the way when the bulk of drivers are getting probed.
  * Instead, this initcall makes sure that deferred probing is delayed until
- * all the registered initcall functions at a particular level are completed.
- * This function is invoked at every *_initcall_sync level.
+ * late_initcall time.
  */
 static int deferred_probe_initcall(void)
 {
-	if (!deferred_wq) {
-		deferred_wq = create_singlethread_workqueue("deferwq");
-		if (WARN_ON(!deferred_wq))
-			return -ENOMEM;
-	}
+	deferred_wq = create_singlethread_workqueue("deferwq");
+	if (WARN_ON(!deferred_wq))
+		return -ENOMEM;
 
-	enable_trigger_defer_cycle();
-	driver_deferred_probe_enable = false;
+	driver_deferred_probe_enable = true;
+	driver_deferred_probe_trigger();
+	/* Sort as many dependencies as possible before exiting initcalls */
+	flush_workqueue(deferred_wq);
 	return 0;
 }
-arch_initcall_sync(deferred_probe_initcall);
-subsys_initcall_sync(deferred_probe_initcall);
-fs_initcall_sync(deferred_probe_initcall);
-device_initcall_sync(deferred_probe_initcall);
-
-static int deferred_probe_enable_fn(void)
-{
-	/* Enable deferred probing for all time */
-	enable_trigger_defer_cycle();
-	return 0;
-}
-late_initcall(deferred_probe_enable_fn);
+late_initcall(deferred_probe_initcall);
 
 static void driver_bound(struct device *dev)
 {
@@ -228,8 +204,6 @@ static void driver_bound(struct device *dev)
 		 __func__, dev_name(dev));
 
 	klist_add_tail(&dev->p->knode_driver, &dev->driver->p->klist_devices);
-
-	device_pm_check_callbacks(dev);
 
 	/*
 	 * Make sure the device is no longer in one of the deferred lists and
@@ -638,20 +612,6 @@ void device_initial_probe(struct device *dev)
 {
 	__device_attach(dev, true);
 }
-#ifdef CONFIG_PLATFORM_AUTO
-static inline int lock_parent(struct device *dev)
-{
-	if (!dev->parent || dev->bus == &platform_bus_type)
-		return 0;
-
-	return 1;
-}
-#else
-static inline int lock_parent(struct device *dev)
-{
-	return dev->parent ? 1 : 0;
-}
-#endif
 
 static int __driver_attach(struct device *dev, void *data)
 {
@@ -669,13 +629,14 @@ static int __driver_attach(struct device *dev, void *data)
 
 	if (!driver_match_device(drv, dev))
 		return 0;
-	if (lock_parent(dev))
+
+	if (dev->parent)	/* Needed for USB */
 		device_lock(dev->parent);
 	device_lock(dev);
 	if (!dev->driver)
 		driver_probe_device(drv, dev);
 	device_unlock(dev);
-	if (lock_parent(dev))
+	if (dev->parent)
 		device_unlock(dev->parent);
 
 	return 0;
@@ -731,7 +692,6 @@ static void __device_release_driver(struct device *dev)
 			dev->pm_domain->dismiss(dev);
 
 		klist_remove(&dev->p->knode_driver);
-		device_pm_check_callbacks(dev);
 		if (dev->bus)
 			blocking_notifier_call_chain(&dev->bus->p->bus_notifier,
 						     BUS_NOTIFY_UNBOUND_DRIVER,

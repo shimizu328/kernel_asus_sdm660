@@ -717,8 +717,7 @@ rescan:
 }
 
 /**
- *	do_remount_sb2 - asks filesystem to change mount options.
- *	@mnt:   mount we are looking at
+ *	do_remount_sb - asks filesystem to change mount options.
  *	@sb:	superblock in question
  *	@flags:	numeric part of options
  *	@data:	the rest of options
@@ -726,7 +725,7 @@ rescan:
  *
  *	Alters the mount options of a mounted file system.
  */
-int do_remount_sb2(struct vfsmount *mnt, struct super_block *sb, int flags, void *data, int force)
+int do_remount_sb(struct super_block *sb, int flags, void *data, int force)
 {
 	int retval;
 	int remount_ro;
@@ -768,16 +767,7 @@ int do_remount_sb2(struct vfsmount *mnt, struct super_block *sb, int flags, void
 		}
 	}
 
-	if (mnt && sb->s_op->remount_fs2) {
-		retval = sb->s_op->remount_fs2(mnt, sb, &flags, data);
-		if (retval) {
-			if (!force)
-				goto cancel_readonly;
-			/* If forced remount, go ahead despite any errors */
-			WARN(1, "forced remount of a %s fs returned %i\n",
-			     sb->s_type->name, retval);
-		}
-	} else if (sb->s_op->remount_fs) {
+	if (sb->s_op->remount_fs) {
 		retval = sb->s_op->remount_fs(sb, &flags, data);
 		if (retval) {
 			if (!force)
@@ -809,17 +799,12 @@ cancel_readonly:
 	return retval;
 }
 
-int do_remount_sb(struct super_block *sb, int flags, void *data, int force)
-{
-	return do_remount_sb2(NULL, sb, flags, data, force);
-}
-
 static void do_emergency_remount(struct work_struct *work)
 {
 	struct super_block *sb, *p = NULL;
 
 	spin_lock(&sb_lock);
-	list_for_each_entry_reverse(sb, &super_blocks, s_list) {
+	list_for_each_entry(sb, &super_blocks, s_list) {
 		if (hlist_unhashed(&sb->s_instances))
 			continue;
 		sb->s_count++;
@@ -982,7 +967,7 @@ static int set_bdev_super(struct super_block *s, void *data)
 	 * We set the bdi here to the queue backing, file systems can
 	 * overwrite this in ->fill_super()
 	 */
-	s->s_bdi = bdev_get_queue(s->s_bdev)->backing_dev_info;
+	s->s_bdi = &bdev_get_queue(s->s_bdev)->backing_dev_info;
 	return 0;
 }
 
@@ -1133,7 +1118,7 @@ struct dentry *mount_single(struct file_system_type *fs_type,
 EXPORT_SYMBOL(mount_single);
 
 struct dentry *
-mount_fs(struct file_system_type *type, int flags, const char *name, struct vfsmount *mnt, void *data)
+mount_fs(struct file_system_type *type, int flags, const char *name, void *data)
 {
 	struct dentry *root;
 	struct super_block *sb;
@@ -1150,10 +1135,7 @@ mount_fs(struct file_system_type *type, int flags, const char *name, struct vfsm
 			goto out_free_secdata;
 	}
 
-	if (type->mount2)
-		root = type->mount2(mnt, type, flags, name, data);
-	else
-		root = type->mount(type, flags, name, data);
+	root = type->mount(type, flags, name, data);
 	if (IS_ERR(root)) {
 		error = PTR_ERR(root);
 		goto out_free_secdata;

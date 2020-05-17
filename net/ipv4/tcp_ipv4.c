@@ -692,7 +692,6 @@ static void tcp_v4_send_reset(const struct sock *sk, struct sk_buff *skb)
 		arg.bound_dev_if = sk->sk_bound_dev_if;
 
 	arg.tos = ip_hdr(skb)->tos;
-	arg.uid = sock_net_uid(net, sk && sk_fullsock(sk) ? sk : NULL);
 	ip_send_unicast_reply(*this_cpu_ptr(net->ipv4.tcp_sk),
 			      skb, &TCP_SKB_CB(skb)->header.h4.opt,
 			      ip_hdr(skb)->saddr, ip_hdr(skb)->daddr,
@@ -714,7 +713,7 @@ release_sk1:
    outside socket context is ugly, certainly. What can I do?
  */
 
-static void tcp_v4_send_ack(const struct sock *sk,
+static void tcp_v4_send_ack(struct net *net,
 			    struct sk_buff *skb, u32 seq, u32 ack,
 			    u32 win, u32 tsval, u32 tsecr, int oif,
 			    struct tcp_md5sig_key *key,
@@ -729,7 +728,6 @@ static void tcp_v4_send_ack(const struct sock *sk,
 #endif
 			];
 	} rep;
-	struct net *net = sock_net(sk);
 	struct ip_reply_arg arg;
 
 	memset(&rep.th, 0, sizeof(struct tcphdr));
@@ -779,7 +777,6 @@ static void tcp_v4_send_ack(const struct sock *sk,
 	if (oif)
 		arg.bound_dev_if = oif;
 	arg.tos = tos;
-	arg.uid = sock_net_uid(net, sk_fullsock(sk) ? sk : NULL);
 	ip_send_unicast_reply(*this_cpu_ptr(net->ipv4.tcp_sk),
 			      skb, &TCP_SKB_CB(skb)->header.h4.opt,
 			      ip_hdr(skb)->saddr, ip_hdr(skb)->daddr,
@@ -793,7 +790,7 @@ static void tcp_v4_timewait_ack(struct sock *sk, struct sk_buff *skb)
 	struct inet_timewait_sock *tw = inet_twsk(sk);
 	struct tcp_timewait_sock *tcptw = tcp_twsk(sk);
 
-	tcp_v4_send_ack(sk, skb,
+	tcp_v4_send_ack(sock_net(sk), skb,
 			tcptw->tw_snd_nxt, tcptw->tw_rcv_nxt,
 			tcptw->tw_rcv_wnd >> tw->tw_rcv_wscale,
 			tcp_time_stamp + tcptw->tw_ts_offset,
@@ -821,7 +818,7 @@ static void tcp_v4_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 	 * exception of <SYN> segments, MUST be right-shifted by
 	 * Rcv.Wind.Shift bits:
 	 */
-	tcp_v4_send_ack(sk, skb, seq,
+	tcp_v4_send_ack(sock_net(sk), skb, seq,
 			tcp_rsk(req)->rcv_nxt,
 			req->rsk_rcv_wnd >> inet_rsk(req)->rcv_wscale,
 			tcp_time_stamp,
@@ -850,8 +847,7 @@ static int tcp_v4_send_synack(const struct sock *sk, struct dst_entry *dst,
 	struct sk_buff *skb;
 
 	/* First, grab a route. */
-	if (!dst && (dst = inet_csk_route_req(
-					(struct sock *)sk, &fl4, req)) == NULL)
+	if (!dst && (dst = inet_csk_route_req(sk, &fl4, req)) == NULL)
 		return -1;
 
 	skb = tcp_make_synack(sk, dst, req, foc, attach_req);
@@ -1210,8 +1206,7 @@ static struct dst_entry *tcp_v4_route_req(const struct sock *sk,
 					  const struct request_sock *req,
 					  bool *strict)
 {
-	struct dst_entry *dst = inet_csk_route_req(
-					(struct sock *)sk, &fl->u.ip4, req);
+	struct dst_entry *dst = inet_csk_route_req(sk, &fl->u.ip4, req);
 
 	if (strict) {
 		if (fl->u.ip4.daddr == inet_rsk(req)->ir_rmt_addr)
@@ -1589,12 +1584,6 @@ int tcp_v4_rcv(struct sk_buff *skb)
 	if (!pskb_may_pull(skb, th->doff * 4))
 		goto discard_it;
 
-	/* Assuming a trustworthy entity did the checksum and found the csum
-	 * invalid, drop the packet.
-	 */
-	if (skb->ip_summed == CHECKSUM_COMPLETE && skb->csum_valid == 0)
-		goto csum_error;
-
 	/* An explanation is required here, I think.
 	 * Packet length and doff are validated by header prediction,
 	 * provided case of th->doff==0 is eliminated.
@@ -1655,8 +1644,6 @@ process:
 		}
 		if (nsk == sk) {
 			reqsk_put(req);
-		} else if (tcp_filter(sk, skb)) {
-			goto discard_and_relse;
 		} else if (tcp_child_process(sk, nsk, skb)) {
 			tcp_v4_send_reset(nsk, skb);
 			goto discard_and_relse;
@@ -2214,7 +2201,6 @@ static void get_tcp4_sock(struct sock *sk, struct seq_file *f, int i)
 	__be32 src = inet->inet_rcv_saddr;
 	__u16 destp = ntohs(inet->inet_dport);
 	__u16 srcp = ntohs(inet->inet_sport);
-	__u8 seq_state = sk->sk_state;
 	int rx_queue;
 	int state;
 
@@ -2234,9 +2220,6 @@ static void get_tcp4_sock(struct sock *sk, struct seq_file *f, int i)
 		timer_expires = jiffies;
 	}
 
-	if (inet->transparent)
-		seq_state |= 0x80;
-
 	state = sk_state_load(sk);
 	if (state == TCP_LISTEN)
 		rx_queue = sk->sk_ack_backlog;
@@ -2248,7 +2231,7 @@ static void get_tcp4_sock(struct sock *sk, struct seq_file *f, int i)
 
 	seq_printf(f, "%4d: %08X:%04X %08X:%04X %02X %08X:%08X %02X:%08lX "
 			"%08X %5u %8d %lu %d %pK %lu %lu %u %u %d",
-		i, src, srcp, dest, destp, seq_state,
+		i, src, srcp, dest, destp, state,
 		tp->write_seq - tp->snd_una,
 		rx_queue,
 		timer_active,
@@ -2402,7 +2385,6 @@ struct proto tcp_prot = {
 	.destroy_cgroup		= tcp_destroy_cgroup,
 	.proto_cgroup		= tcp_proto_cgroup,
 #endif
-	.diag_destroy		= tcp_abort,
 };
 EXPORT_SYMBOL(tcp_prot);
 

@@ -8,7 +8,6 @@
 #include <linux/hardirq.h>
 #include <linux/perf_event.h>
 #include <linux/tracepoint.h>
-#include <linux/coresight-stm.h>
 
 struct trace_array;
 struct trace_buffer;
@@ -232,8 +231,7 @@ void *trace_event_buffer_reserve(struct trace_event_buffer *fbuffer,
 				  struct trace_event_file *trace_file,
 				  unsigned long len);
 
-void trace_event_buffer_commit(struct trace_event_buffer *fbuffer,
-			       unsigned long len);
+void trace_event_buffer_commit(struct trace_event_buffer *fbuffer);
 
 enum {
 	TRACE_EVENT_FL_FILTERED_BIT,
@@ -503,7 +501,6 @@ __event_trigger_test_discard(struct trace_event_file *file,
  * @entry: The event itself
  * @irq_flags: The state of the interrupts at the start of the event
  * @pc: The state of the preempt count at the start of the event.
- * @len: The length of the payload data required for stm logging.
  *
  * This is a helper function to handle triggers that require data
  * from the event itself. It also tests the event against filters and
@@ -513,16 +510,12 @@ static inline void
 event_trigger_unlock_commit(struct trace_event_file *file,
 			    struct ring_buffer *buffer,
 			    struct ring_buffer_event *event,
-			    void *entry, unsigned long irq_flags, int pc,
-			    unsigned long len)
+			    void *entry, unsigned long irq_flags, int pc)
 {
 	enum event_trigger_type tt = ETT_NONE;
 
-	if (!__event_trigger_test_discard(file, buffer, event, entry, &tt)) {
-		if (len)
-			stm_log(OST_ENTITY_FTRACE_EVENTS, entry, len);
+	if (!__event_trigger_test_discard(file, buffer, event, entry, &tt))
 		trace_buffer_unlock_commit(file->tr, buffer, event, irq_flags, pc);
-	}
 
 	if (tt)
 		event_triggers_post_call(file, tt);

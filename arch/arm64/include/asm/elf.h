@@ -23,7 +23,15 @@
  */
 #include <asm/ptrace.h>
 #include <asm/user.h>
-#include <asm/fpsimd.h>
+
+typedef unsigned long elf_greg_t;
+
+#define ELF_NGREG (sizeof(struct user_pt_regs) / sizeof(elf_greg_t))
+#define ELF_CORE_COPY_REGS(dest, regs)	\
+	*(struct user_pt_regs *)&(dest) = (regs)->user_regs;
+
+typedef elf_greg_t elf_gregset_t[ELF_NGREG];
+typedef struct user_fpsimd_state elf_fpregset_t;
 
 /*
  * AArch64 static relocation types.
@@ -78,8 +86,6 @@
 #define R_AARCH64_MOVW_PREL_G2_NC	292
 #define R_AARCH64_MOVW_PREL_G3		293
 
-#define R_AARCH64_RELATIVE		1027
-
 /*
  * These are used to set parameters in the core dumps.
  */
@@ -120,17 +126,6 @@
  */
 #define ELF_ET_DYN_BASE		(2 * TASK_SIZE_64 / 3)
 
-#ifndef __ASSEMBLY__
-
-typedef unsigned long elf_greg_t;
-
-#define ELF_NGREG (sizeof(struct user_pt_regs) / sizeof(elf_greg_t))
-#define ELF_CORE_COPY_REGS(dest, regs)	\
-	*(struct user_pt_regs *)&(dest) = (regs)->user_regs;
-
-typedef elf_greg_t elf_gregset_t[ELF_NGREG];
-typedef struct user_fpsimd_state elf_fpregset_t;
-
 /*
  * When the program starts, a1 contains a pointer to a function to be
  * registered with atexit, as per the SVR4 ABI.  A value of 0 means we have no
@@ -141,12 +136,11 @@ typedef struct user_fpsimd_state elf_fpregset_t;
 #define SET_PERSONALITY(ex)		clear_thread_flag(TIF_32BIT);
 
 /* update AT_VECTOR_SIZE_ARCH if the number of NEW_AUX_ENT entries changes */
-#define _SET_AUX_ENT_VDSO						\
+#define ARCH_DLINFO							\
 do {									\
 	NEW_AUX_ENT(AT_SYSINFO_EHDR,					\
-		    (Elf64_Off)current->mm->context.vdso);		\
+		    (elf_addr_t)current->mm->context.vdso);		\
 } while (0)
-#define ARCH_DLINFO _SET_AUX_ENT_VDSO
 
 #define ARCH_HAS_SETUP_ADDITIONAL_PAGES
 struct linux_binprm;
@@ -171,7 +165,7 @@ extern int arch_setup_additional_pages(struct linux_binprm *bprm,
 #ifdef CONFIG_COMPAT
 
 /* PIE load location for compat arm. Must match ARM ELF_ET_DYN_BASE. */
-#define COMPAT_ELF_ET_DYN_BASE		(2 * TASK_SIZE_32 / 3)
+#define COMPAT_ELF_ET_DYN_BASE		0x000400000UL
 
 /* AArch32 registers. */
 #define COMPAT_ELF_NGREG		18
@@ -184,23 +178,13 @@ typedef compat_elf_greg_t		compat_elf_gregset_t[COMPAT_ELF_NGREG];
 					 ((x)->e_flags & EF_ARM_EABI_MASK))
 
 #define compat_start_thread		compat_start_thread
-#define COMPAT_SET_PERSONALITY(ex)					\
-do {									\
-	set_thread_flag(TIF_32BIT);					\
-} while (0)
-
-#ifdef CONFIG_VDSO32
-#define COMPAT_ARCH_DLINFO		_SET_AUX_ENT_VDSO
-#else
+#define COMPAT_SET_PERSONALITY(ex)	set_thread_flag(TIF_32BIT);
 #define COMPAT_ARCH_DLINFO
-#endif
 extern int aarch32_setup_vectors_page(struct linux_binprm *bprm,
 				      int uses_interp);
 #define compat_arch_setup_additional_pages \
 					aarch32_setup_vectors_page
 
 #endif /* CONFIG_COMPAT */
-
-#endif /* !__ASSEMBLY__ */
 
 #endif

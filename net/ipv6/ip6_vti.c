@@ -324,11 +324,9 @@ static int vti6_rcv(struct sk_buff *skb)
 			goto discard;
 		}
 
-		XFRM_TUNNEL_SKB_CB(skb)->tunnel.ip6 = t;
-
 		rcu_read_unlock();
 
-		return xfrm6_rcv(skb);
+		return xfrm6_rcv_tnl(skb, t);
 	}
 	rcu_read_unlock();
 	return -EINVAL;
@@ -633,10 +631,9 @@ static int vti6_err(struct sk_buff *skb, struct inet6_skb_parm *opt,
 		return 0;
 
 	if (type == NDISC_REDIRECT)
-		ip6_redirect(skb, net, skb->dev->ifindex, 0,
-			     sock_net_uid(net, NULL));
+		ip6_redirect(skb, net, skb->dev->ifindex, 0);
 	else
-		ip6_update_pmtu(skb, net, info, 0, 0, sock_net_uid(net, NULL));
+		ip6_update_pmtu(skb, net, info, 0, 0);
 	xfrm_state_put(x);
 
 	return 0;

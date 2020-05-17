@@ -377,7 +377,7 @@ ktime_t ntp_get_next_leap(void)
 
 	if ((time_state == TIME_INS) && (time_status & STA_INS))
 		return ktime_set(ntp_next_leap_sec, 0);
-	ret = KTIME_MAX;
+	ret.tv64 = KTIME_MAX;
 	return ret;
 }
 
@@ -553,7 +553,7 @@ static void sync_cmos_clock(struct work_struct *work)
 	if (!fail || fail == -ENODEV)
 		next.tv_sec = 659;
 	else
-		next.tv_sec = 10;
+		next.tv_sec = 0;
 
 	if (next.tv_nsec >= NSEC_PER_SEC) {
 		next.tv_sec++;

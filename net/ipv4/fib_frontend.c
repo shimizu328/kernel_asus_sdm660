@@ -345,7 +345,7 @@ static int __fib_validate_source(struct sk_buff *skb, __be32 src, __be32 dst,
 
 	fl4.flowi4_mark = IN_DEV_SRC_VMARK(idev) ? skb->mark : 0;
 
-//	trace_fib_validate_source(dev, &fl4);
+	trace_fib_validate_source(dev, &fl4);
 
 	net = dev_net(dev);
 	if (fib_lookup(net, &fl4, &res, 0))
@@ -509,6 +509,7 @@ static int rtentry_to_fib_config(struct net *net, int cmd, struct rtentry *rt,
 		if (!dev)
 			return -ENODEV;
 		cfg->fc_oif = dev->ifindex;
+		cfg->fc_table = l3mdev_fib_table(dev);
 		if (colon) {
 			struct in_ifaddr *ifa;
 			struct in_device *in_dev = __in_dev_get_rtnl(dev);
@@ -628,7 +629,6 @@ const struct nla_policy rtm_ipv4_policy[RTA_MAX + 1] = {
 	[RTA_FLOW]		= { .type = NLA_U32 },
 	[RTA_ENCAP_TYPE]	= { .type = NLA_U16 },
 	[RTA_ENCAP]		= { .type = NLA_NESTED },
-	[RTA_UID]		= { .type = NLA_U32 },
 };
 
 static int rtm_to_fib_config(struct net *net, struct sk_buff *skb,
@@ -1035,7 +1035,7 @@ no_promotions:
 			 * First of all, we scan fib_info list searching
 			 * for stray nexthop entries, then ignite fib_flush.
 			 */
-			if (fib_sync_down_addr(dev_net(dev), ifa->ifa_local))
+			if (fib_sync_down_addr(dev, ifa->ifa_local))
 				fib_flush(dev_net(dev));
 		}
 	}

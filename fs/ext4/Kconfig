@@ -106,7 +106,6 @@ config EXT4_ENCRYPTION
 	select CRYPTO_ECB
 	select CRYPTO_XTS
 	select CRYPTO_CTS
-	select CRYPTO_HEH
 	select CRYPTO_CTR
 	select CRYPTO_SHA256
 	select KEYS
@@ -118,15 +117,9 @@ config EXT4_ENCRYPTION
 	  decrypted pages in the page cache.
 
 config EXT4_FS_ENCRYPTION
-	bool "Ext4 FS Encryption"
-	default n
+	bool
+	default y
 	depends on EXT4_ENCRYPTION
-
-config EXT4_FS_ICE_ENCRYPTION
-	bool "Ext4 Encryption with ICE support"
-	default n
-	depends on EXT4_FS_ENCRYPTION
-	depends on PFK
 
 config EXT4_DEBUG
 	bool "EXT4 debugging support"

@@ -589,8 +589,6 @@ enum {
 #define EXT4_ENCRYPTION_MODE_AES_256_GCM	2
 #define EXT4_ENCRYPTION_MODE_AES_256_CBC	3
 #define EXT4_ENCRYPTION_MODE_AES_256_CTS	4
-#define EXT4_ENCRYPTION_MODE_PRIVATE		127
-#define EXT4_ENCRYPTION_MODE_AES_256_HEH	126
 
 #include "ext4_crypto.h"
 
@@ -2283,8 +2281,7 @@ struct page *ext4_encrypt(struct inode *inode,
 			  struct page *plaintext_page,
 			  gfp_t gfp_flags);
 int ext4_decrypt(struct page *page);
-int ext4_encrypted_zeroout(struct inode *inode, ext4_lblk_t lblk,
-			   ext4_fsblk_t pblk, ext4_lblk_t len);
+int ext4_encrypted_zeroout(struct inode *inode, struct ext4_extent *ex);
 extern const struct dentry_operations ext4_encrypted_d_ops;
 
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
@@ -2348,35 +2345,15 @@ static inline void ext4_fname_free_filename(struct ext4_filename *fname) { }
 /* crypto_key.c */
 void ext4_free_crypt_info(struct ext4_crypt_info *ci);
 void ext4_free_encryption_info(struct inode *inode, struct ext4_crypt_info *ci);
-int _ext4_get_encryption_info(struct inode *inode);
 
 #ifdef CONFIG_EXT4_FS_ENCRYPTION
 int ext4_has_encryption_key(struct inode *inode);
 
-static inline int ext4_get_encryption_info(struct inode *inode)
-{
-	struct ext4_crypt_info *ci = EXT4_I(inode)->i_crypt_info;
-
-	if (!ci ||
-	    (ci->ci_keyring_key &&
-	     (ci->ci_keyring_key->flags & ((1 << KEY_FLAG_INVALIDATED) |
-					   (1 << KEY_FLAG_REVOKED) |
-					   (1 << KEY_FLAG_DEAD)))))
-		return _ext4_get_encryption_info(inode);
-	return 0;
-}
+int ext4_get_encryption_info(struct inode *inode);
 
 static inline struct ext4_crypt_info *ext4_encryption_info(struct inode *inode)
 {
 	return EXT4_I(inode)->i_crypt_info;
-}
-
-static inline int ext4_using_hardware_encryption(struct inode *inode)
-{
-	struct ext4_crypt_info *ci = ext4_encryption_info(inode);
-
-	return S_ISREG(inode->i_mode) && ci &&
-		ci->ci_data_mode == EXT4_ENCRYPTION_MODE_PRIVATE;
 }
 
 #else
@@ -2391,10 +2368,6 @@ static inline int ext4_get_encryption_info(struct inode *inode)
 static inline struct ext4_crypt_info *ext4_encryption_info(struct inode *inode)
 {
 	return NULL;
-}
-static inline int ext4_using_hardware_encryption(struct inode *inode)
-{
-	return 0;
 }
 #endif
 
@@ -2498,8 +2471,7 @@ extern int ext4_mb_add_groupinfo(struct super_block *sb,
 		ext4_group_t i, struct ext4_group_desc *desc);
 extern int ext4_group_add_blocks(handle_t *handle, struct super_block *sb,
 				ext4_fsblk_t block, unsigned long count);
-extern int ext4_trim_fs(struct super_block *, struct fstrim_range *,
-				unsigned long blkdev_flags);
+extern int ext4_trim_fs(struct super_block *, struct fstrim_range *);
 
 /* inode.c */
 int ext4_inode_is_fast_symlink(struct inode *inode);
@@ -2525,8 +2497,19 @@ int do_journal_get_write_access(handle_t *handle,
 #define FALL_BACK_TO_NONDELALLOC 1
 #define CONVERT_INLINE_DATA	 2
 
-extern struct inode *ext4_iget(struct super_block *, unsigned long);
-extern struct inode *ext4_iget_normal(struct super_block *, unsigned long);
+typedef enum {
+	EXT4_IGET_NORMAL =	0,
+	EXT4_IGET_SPECIAL =	0x0001, /* OK to iget a system inode */
+	EXT4_IGET_HANDLE = 	0x0002	/* Inode # is from a handle */
+} ext4_iget_flags;
+
+extern struct inode *__ext4_iget(struct super_block *sb, unsigned long ino,
+				 ext4_iget_flags flags, const char *function,
+				 unsigned int line);
+
+#define ext4_iget(sb, ino, flags) \
+	__ext4_iget((sb), (ino), (flags), __func__, __LINE__)
+
 extern int  ext4_write_inode(struct inode *, struct writeback_control *);
 extern int  ext4_setattr(struct dentry *, struct iattr *);
 extern int  ext4_getattr(struct vfsmount *mnt, struct dentry *dentry,
@@ -2555,8 +2538,6 @@ extern int ext4_filemap_fault(struct vm_area_struct *vma, struct vm_fault *vmf);
 extern qsize_t *ext4_get_reserved_space(struct inode *inode);
 extern void ext4_da_update_reserve_space(struct inode *inode,
 					int used, int quota_claim);
-extern int ext4_issue_zeroout(struct inode *inode, ext4_lblk_t lblk,
-			      ext4_fsblk_t pblk, ext4_lblk_t len);
 
 /* indirect.c */
 extern int ext4_ind_map_blocks(handle_t *handle, struct inode *inode,
@@ -3060,7 +3041,8 @@ extern int ext4_da_write_inline_data_end(struct inode *inode, loff_t pos,
 					 struct page *page);
 extern int ext4_try_add_inline_entry(handle_t *handle,
 				     struct ext4_filename *fname,
-				     struct inode *dir, struct inode *inode);
+				     struct dentry *dentry,
+				     struct inode *inode);
 extern int ext4_try_create_inline_dir(handle_t *handle,
 				      struct inode *parent,
 				      struct inode *inode);

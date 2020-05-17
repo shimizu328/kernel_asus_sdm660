@@ -50,6 +50,8 @@ obj-$(CONFIG_RESET_CONTROLLER)	+= reset/
 obj-y				+= tty/
 obj-y				+= char/
 
+# iommu/ comes before gpu as gpu are using iommu controllers
+obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 
 # gpu/ comes after char for AGP vs DRM startup and after iommu
 obj-y				+= gpu/
@@ -62,13 +64,12 @@ obj-$(CONFIG_FB_INTEL)          += video/fbdev/intelfb/
 
 obj-$(CONFIG_PARPORT)		+= parport/
 obj-$(CONFIG_NVM)		+= lightnvm/
-obj-y				+= base/ block/ misc/ mfd/ nfc/ soc/
+obj-y				+= base/ block/ misc/ mfd/ nfc/
 obj-$(CONFIG_LIBNVDIMM)		+= nvdimm/
 obj-$(CONFIG_DMA_SHARED_BUFFER) += dma-buf/
 obj-$(CONFIG_NUBUS)		+= nubus/
 obj-y				+= macintosh/
 obj-$(CONFIG_IDE)		+= ide/
-obj-$(CONFIG_CRYPTO)		+= crypto/
 obj-$(CONFIG_SCSI)		+= scsi/
 obj-y				+= nvme/
 obj-$(CONFIG_ATA)		+= ata/
@@ -76,8 +77,6 @@ obj-$(CONFIG_TARGET_CORE)	+= target/
 obj-$(CONFIG_MTD)		+= mtd/
 obj-$(CONFIG_SPI)		+= spi/
 obj-$(CONFIG_SPMI)		+= spmi/
-obj-$(CONFIG_SLIMBUS)		+= slimbus/
-obj-$(CONFIG_SOUNDWIRE)		+= soundwire/
 obj-y				+= hsi/
 obj-y				+= net/
 obj-$(CONFIG_ATM)		+= atm/
@@ -125,10 +124,10 @@ obj-$(CONFIG_CPU_IDLE)		+= cpuidle/
 obj-y				+= mmc/
 obj-$(CONFIG_MEMSTICK)		+= memstick/
 obj-y				+= leds/
-obj-$(CONFIG_SWITCH)		+= switch/
 obj-$(CONFIG_INFINIBAND)	+= infiniband/
 obj-$(CONFIG_SGI_SN)		+= sn/
 obj-y				+= firmware/
+obj-$(CONFIG_CRYPTO)		+= crypto/
 obj-$(CONFIG_SUPERH)		+= sh/
 obj-$(CONFIG_ARCH_SHMOBILE)	+= sh/
 ifndef CONFIG_ARCH_USES_GETTIMEOFFSET
@@ -141,15 +140,11 @@ obj-$(CONFIG_OF)		+= of/
 obj-$(CONFIG_SSB)		+= ssb/
 obj-$(CONFIG_BCMA)		+= bcma/
 obj-$(CONFIG_VHOST_RING)	+= vhost/
-obj-$(CONFIG_VHOST)		+= vhost/
 obj-$(CONFIG_VLYNQ)		+= vlynq/
 obj-$(CONFIG_STAGING)		+= staging/
 obj-y				+= platform/
 #common clk code
 obj-y				+= clk/
-
-# iommu/ comes before gpu as gpu are using iommu controllers
-obj-$(CONFIG_IOMMU_SUPPORT)	+= iommu/
 
 obj-$(CONFIG_MAILBOX)		+= mailbox/
 obj-$(CONFIG_HWSPINLOCK)	+= hwspinlock/
@@ -179,9 +174,3 @@ obj-$(CONFIG_STM)		+= hwtracing/stm/
 obj-$(CONFIG_ANDROID)		+= android/
 obj-$(CONFIG_NVMEM)		+= nvmem/
 obj-$(CONFIG_FPGA)		+= fpga/
-
-obj-$(CONFIG_BIF)		+= bif/
-
-obj-$(CONFIG_SENSORS_SSC)	+= sensors/
-obj-$(CONFIG_ESOC)              += esoc/
-obj-$(CONFIG_TEE)		+= tee/

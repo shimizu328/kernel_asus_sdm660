@@ -32,7 +32,7 @@ struct security_class_mapping secclass_map[] = {
 	    "setsockcreate", NULL } },
 	{ "system",
 	  { "ipc_info", "syslog_read", "syslog_mod",
-	    "syslog_console", "module_request", "module_load", NULL } },
+	    "syslog_console", "module_request", NULL } },
 	{ "capability",
 	  { "chown", "dac_override", "dac_read_search",
 	    "fowner", "fsetid", "kill", "setgid", "setuid", "setpcap",
@@ -157,7 +157,5 @@ struct security_class_mapping secclass_map[] = {
 	  { COMMON_SOCK_PERMS, "attach_queue", NULL } },
 	{ "binder", { "impersonate", "call", "set_context_mgr", "transfer",
 		      NULL } },
-	{ "can_socket",
-	  { COMMON_SOCK_PERMS, NULL } },
 	{ NULL }
   };

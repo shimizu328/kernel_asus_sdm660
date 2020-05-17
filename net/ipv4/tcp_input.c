@@ -102,7 +102,6 @@ int sysctl_tcp_thin_dupack __read_mostly;
 int sysctl_tcp_moderate_rcvbuf __read_mostly = 1;
 int sysctl_tcp_early_retrans __read_mostly = 3;
 int sysctl_tcp_invalid_ratelimit __read_mostly = HZ/2;
-int sysctl_tcp_default_init_rwnd __read_mostly = TCP_INIT_CWND * 2;
 
 #define FLAG_DATA		0x01 /* Incoming frame contained data.		*/
 #define FLAG_WIN_UPDATE		0x02 /* Incoming ACK was a window update.	*/
@@ -220,15 +219,8 @@ static void tcp_ecn_queue_cwr(struct tcp_sock *tp)
 
 static void tcp_ecn_accept_cwr(struct tcp_sock *tp, const struct sk_buff *skb)
 {
-	if (tcp_hdr(skb)->cwr) {
+	if (tcp_hdr(skb)->cwr)
 		tp->ecn_flags &= ~TCP_ECN_DEMAND_CWR;
-
-		/* If the sender is telling us it has entered CWR, then its
-		 * cwnd may be very low (even just 1 packet), so we should ACK
-		 * immediately.
-		 */
-		tcp_enter_quickack_mode((struct sock *)tp, 2);
-	}
 }
 
 static void tcp_ecn_withdraw_cwr(struct tcp_sock *tp)
@@ -2934,7 +2926,10 @@ static void tcp_update_rtt_min(struct sock *sk, u32 rtt_us)
 {
 	const u32 now = tcp_time_stamp, wlen = sysctl_tcp_min_rtt_wlen * HZ;
 	struct rtt_meas *m = tcp_sk(sk)->rtt_min;
-	struct rtt_meas rttm = { .rtt = (rtt_us ? : 1), .ts = now };
+	struct rtt_meas rttm = {
+		.rtt = likely(rtt_us) ? rtt_us : jiffies_to_usecs(1),
+		.ts = now,
+	};
 	u32 elapsed;
 
 	/* Check if the new measurement updates the 1st, 2nd, or 3rd choices */
@@ -3283,12 +3278,8 @@ static int tcp_clean_rtx_queue(struct sock *sk, int prior_fackets,
 		tcp_rearm_rto(sk);
 	}
 
-	if (icsk->icsk_ca_ops->pkts_acked) {
-		struct ack_sample sample = { .pkts_acked = pkts_acked,
-					     .rtt_us = ca_rtt_us };
-
-		icsk->icsk_ca_ops->pkts_acked(sk, &sample);
-	}
+	if (icsk->icsk_ca_ops->pkts_acked)
+		icsk->icsk_ca_ops->pkts_acked(sk, pkts_acked, ca_rtt_us);
 
 #if FASTRETRANS_DEBUG > 0
 	WARN_ON((int)tp->sacked_out < 0);
@@ -3378,10 +3369,9 @@ static void tcp_snd_una_update(struct tcp_sock *tp, u32 ack)
 {
 	u32 delta = ack - tp->snd_una;
 
-	sock_owned_by_me((struct sock *)tp);
-	u64_stats_update_begin_raw(&tp->syncp);
+	u64_stats_update_begin(&tp->syncp);
 	tp->bytes_acked += delta;
-	u64_stats_update_end_raw(&tp->syncp);
+	u64_stats_update_end(&tp->syncp);
 	tp->snd_una = ack;
 }
 
@@ -3390,10 +3380,9 @@ static void tcp_rcv_nxt_update(struct tcp_sock *tp, u32 seq)
 {
 	u32 delta = seq - tp->rcv_nxt;
 
-	sock_owned_by_me((struct sock *)tp);
-	u64_stats_update_begin_raw(&tp->syncp);
+	u64_stats_update_begin(&tp->syncp);
 	tp->bytes_received += delta;
-	u64_stats_update_end_raw(&tp->syncp);
+	u64_stats_update_end(&tp->syncp);
 	tp->rcv_nxt = seq;
 }
 
@@ -5117,8 +5106,7 @@ static void __tcp_ack_snd_check(struct sock *sk, int ofo_possible)
 	struct tcp_sock *tp = tcp_sk(sk);
 
 	    /* More than one full frame received... */
-	if (((tp->rcv_nxt - tp->rcv_wup) > (inet_csk(sk)->icsk_ack.rcv_mss) *
-					sysctl_tcp_delack_seg &&
+	if (((tp->rcv_nxt - tp->rcv_wup) > inet_csk(sk)->icsk_ack.rcv_mss &&
 	     /* ... and right edge of window advances far enough.
 	      * (tcp_recvmsg() will send ACK otherwise). Or...
 	      */
@@ -5662,7 +5650,7 @@ static bool tcp_rcv_fastopen_synack(struct sock *sk, struct sk_buff *synack,
 	if (data) { /* Retransmit unacked data in SYN */
 		tcp_for_write_queue_from(data, sk) {
 			if (data == tcp_send_head(sk) ||
-			    __tcp_retransmit_skb(sk, data, 1))
+			    __tcp_retransmit_skb(sk, data))
 				break;
 		}
 		tcp_rearm_rto(sk);

@@ -52,10 +52,6 @@ struct devfreq_dev_status {
  */
 #define DEVFREQ_FLAG_LEAST_UPPER_BOUND		0x1
 
-#define DEVFREQ_FLAG_WAKEUP_MAXFREQ		0x2
-#define DEVFREQ_FLAG_FAST_HINT			0x4
-#define DEVFREQ_FLAG_SLOW_HINT			0x8
-
 /**
  * struct devfreq_dev_profile - Devfreq's user device profile
  * @initial_freq:	The operating frequency when devfreq_add_device() is
@@ -118,8 +114,7 @@ struct devfreq_governor {
 	struct list_head node;
 
 	const char name[DEVFREQ_NAME_LEN];
-	int (*get_target_freq)(struct devfreq *this, unsigned long *freq,
-				u32 *flag);
+	int (*get_target_freq)(struct devfreq *this, unsigned long *freq);
 	int (*event_handler)(struct devfreq *devfreq,
 				unsigned int event, void *data);
 };
@@ -161,7 +156,6 @@ struct devfreq {
 	struct list_head node;
 
 	struct mutex lock;
-	struct mutex sysfs_lock;
 	struct device dev;
 	struct devfreq_dev_profile *profile;
 	const struct devfreq_governor *governor;
@@ -176,8 +170,6 @@ struct devfreq {
 
 	unsigned long min_freq;
 	unsigned long max_freq;
-	bool is_boost_device;
-	bool max_boost;
 	bool stop_polling;
 
 	/* information for device frequency transition */
@@ -239,9 +231,6 @@ static inline int devfreq_update_stats(struct devfreq *df)
  *			the governor may consider slowing the frequency down.
  *			Specify 0 to use the default. Valid value = 0 to 100.
  *			downdifferential < upthreshold must hold.
- * @simple_scaling:	Setting this flag will scale the clocks up only if the
- *			load is above @upthreshold and will scale the clocks
- *			down only if the load is below @downdifferential.
  *
  * If the fed devfreq_simple_ondemand_data pointer is NULL to the governor,
  * the governor uses the default values.
@@ -249,12 +238,8 @@ static inline int devfreq_update_stats(struct devfreq *df)
 struct devfreq_simple_ondemand_data {
 	unsigned int upthreshold;
 	unsigned int downdifferential;
-	unsigned int simple_scaling;
 };
 #endif
-
-/* Caution: devfreq->lock must be locked before calling update_devfreq */
-extern int update_devfreq(struct devfreq *devfreq);
 
 #else /* !CONFIG_PM_DEVFREQ */
 static inline struct devfreq *devfreq_add_device(struct device *dev,
@@ -323,11 +308,6 @@ static inline void devm_devfreq_unregister_opp_notifier(struct device *dev,
 }
 
 static inline int devfreq_update_stats(struct devfreq *df)
-{
-	return -EINVAL;
-}
-
-static inline int update_devfreq(struct devfreq *devfreq)
 {
 	return -EINVAL;
 }

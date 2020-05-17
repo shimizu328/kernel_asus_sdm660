@@ -33,7 +33,6 @@
 #include <linux/cpufreq.h>
 #include <linux/cpuidle.h>
 #include <linux/timer.h>
-#include <linux/wakeup_reason.h>
 
 #include "../base.h"
 #include "power.h"
@@ -124,13 +123,8 @@ void device_pm_unlock(void)
  */
 void device_pm_add(struct device *dev)
 {
-	/* Skip PM setup/initialization. */
-	if (device_pm_not_required(dev))
-		return;
-
 	pr_debug("PM: Adding info for %s:%s\n",
 		 dev->bus ? dev->bus->name : "No Bus", dev_name(dev));
-	device_pm_check_callbacks(dev);
 	mutex_lock(&dpm_list_mtx);
 	if (dev->parent && dev->parent->power.is_prepared)
 		dev_warn(dev, "parent %s should not be sleeping\n",
@@ -145,9 +139,6 @@ void device_pm_add(struct device *dev)
  */
 void device_pm_remove(struct device *dev)
 {
-	if (device_pm_not_required(dev))
-		return;
-
 	pr_debug("PM: Removing info for %s:%s\n",
 		 dev->bus ? dev->bus->name : "No Bus", dev_name(dev));
 	complete_all(&dev->power.completion);
@@ -156,7 +147,6 @@ void device_pm_remove(struct device *dev)
 	mutex_unlock(&dpm_list_mtx);
 	device_wakeup_disable(dev);
 	pm_runtime_remove(dev);
-	device_pm_check_callbacks(dev);
 }
 
 /**
@@ -395,9 +385,9 @@ static int dpm_run_callback(pm_callback_t cb, struct device *dev,
 	calltime = initcall_debug_start(dev);
 
 	pm_dev_dbg(dev, state, info);
-//	trace_device_pm_callback_start(dev, info, state.event);
+	trace_device_pm_callback_start(dev, info, state.event);
 	error = cb(dev);
-//	trace_device_pm_callback_end(dev, error);
+	trace_device_pm_callback_end(dev, error);
 	suspend_report_result(cb, error);
 
 	initcall_debug_report(dev, calltime, error, state, info);
@@ -556,7 +546,7 @@ void dpm_resume_noirq(pm_message_t state)
 	struct device *dev;
 	ktime_t starttime = ktime_get();
 
-//	trace_suspend_resume(TPS("dpm_resume_noirq"), state.event, true);
+	trace_suspend_resume(TPS("dpm_resume_noirq"), state.event, true);
 	mutex_lock(&dpm_list_mtx);
 	pm_transition = state;
 
@@ -600,7 +590,7 @@ void dpm_resume_noirq(pm_message_t state)
 	resume_device_irqs();
 	device_wakeup_disarm_wake_irqs();
 	cpuidle_resume();
-//	trace_suspend_resume(TPS("dpm_resume_noirq"), state.event, false);
+	trace_suspend_resume(TPS("dpm_resume_noirq"), state.event, false);
 }
 
 /**
@@ -679,11 +669,7 @@ void dpm_resume_early(pm_message_t state)
 	struct device *dev;
 	ktime_t starttime = ktime_get();
 
-#ifdef CONFIG_BOEFFLA_WL_BLOCKER
-	pm_print_active_wakeup_sources();
-#endif
-
-//	trace_suspend_resume(TPS("dpm_resume_early"), state.event, true);
+	trace_suspend_resume(TPS("dpm_resume_early"), state.event, true);
 	mutex_lock(&dpm_list_mtx);
 	pm_transition = state;
 
@@ -723,7 +709,7 @@ void dpm_resume_early(pm_message_t state)
 	mutex_unlock(&dpm_list_mtx);
 	async_synchronize_full();
 	dpm_show_time(starttime, state, "early");
-//	trace_suspend_resume(TPS("dpm_resume_early"), state.event, false);
+	trace_suspend_resume(TPS("dpm_resume_early"), state.event, false);
 }
 
 /**
@@ -855,7 +841,7 @@ void dpm_resume(pm_message_t state)
 	struct device *dev;
 	ktime_t starttime = ktime_get();
 
-//	trace_suspend_resume(TPS("dpm_resume"), state.event, true);
+	trace_suspend_resume(TPS("dpm_resume"), state.event, true);
 	might_sleep();
 
 	mutex_lock(&dpm_list_mtx);
@@ -897,7 +883,7 @@ void dpm_resume(pm_message_t state)
 	dpm_show_time(starttime, state, NULL);
 
 	cpufreq_resume();
-//	trace_suspend_resume(TPS("dpm_resume"), state.event, false);
+	trace_suspend_resume(TPS("dpm_resume"), state.event, false);
 }
 
 /**
@@ -955,7 +941,7 @@ void dpm_complete(pm_message_t state)
 {
 	struct list_head list;
 
-//	trace_suspend_resume(TPS("dpm_complete"), state.event, true);
+	trace_suspend_resume(TPS("dpm_complete"), state.event, true);
 	might_sleep();
 
 	INIT_LIST_HEAD(&list);
@@ -968,16 +954,16 @@ void dpm_complete(pm_message_t state)
 		list_move(&dev->power.entry, &list);
 		mutex_unlock(&dpm_list_mtx);
 
-//		trace_device_pm_callback_start(dev, "", state.event);
+		trace_device_pm_callback_start(dev, "", state.event);
 		device_complete(dev, state);
-//		trace_device_pm_callback_end(dev, 0);
+		trace_device_pm_callback_end(dev, 0);
 
 		mutex_lock(&dpm_list_mtx);
 		put_device(dev);
 	}
 	list_splice(&list, &dpm_list);
 	mutex_unlock(&dpm_list_mtx);
-//	trace_suspend_resume(TPS("dpm_complete"), state.event, false);
+	trace_suspend_resume(TPS("dpm_complete"), state.event, false);
 }
 
 /**
@@ -1118,7 +1104,7 @@ int dpm_suspend_noirq(pm_message_t state)
 	ktime_t starttime = ktime_get();
 	int error = 0;
 
-//	trace_suspend_resume(TPS("dpm_suspend_noirq"), state.event, true);
+	trace_suspend_resume(TPS("dpm_suspend_noirq"), state.event, true);
 	cpuidle_pause();
 	device_wakeup_arm_wake_irqs();
 	suspend_device_irqs();
@@ -1160,7 +1146,7 @@ int dpm_suspend_noirq(pm_message_t state)
 	} else {
 		dpm_show_time(starttime, state, "noirq");
 	}
-//	trace_suspend_resume(TPS("dpm_suspend_noirq"), state.event, false);
+	trace_suspend_resume(TPS("dpm_suspend_noirq"), state.event, false);
 	return error;
 }
 
@@ -1262,7 +1248,7 @@ int dpm_suspend_late(pm_message_t state)
 	ktime_t starttime = ktime_get();
 	int error = 0;
 
-//	trace_suspend_resume(TPS("dpm_suspend_late"), state.event, true);
+	trace_suspend_resume(TPS("dpm_suspend_late"), state.event, true);
 	mutex_lock(&dpm_list_mtx);
 	pm_transition = state;
 	async_error = 0;
@@ -1301,7 +1287,7 @@ int dpm_suspend_late(pm_message_t state)
 	} else {
 		dpm_show_time(starttime, state, "late");
 	}
-//	trace_suspend_resume(TPS("dpm_suspend_late"), state.event, false);
+	trace_suspend_resume(TPS("dpm_suspend_late"), state.event, false);
 	return error;
 }
 
@@ -1341,9 +1327,9 @@ static int legacy_suspend(struct device *dev, pm_message_t state,
 
 	calltime = initcall_debug_start(dev);
 
-//	trace_device_pm_callback_start(dev, info, state.event);
+	trace_device_pm_callback_start(dev, info, state.event);
 	error = cb(dev, state);
-//	trace_device_pm_callback_end(dev, error);
+	trace_device_pm_callback_end(dev, error);
 	suspend_report_result(cb, error);
 
 	initcall_debug_report(dev, calltime, error, state, info);
@@ -1362,7 +1348,6 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 	pm_callback_t callback = NULL;
 	char *info = NULL;
 	int error = 0;
-	char suspend_abort[MAX_SUSPEND_ABORT_LEN];
 	DECLARE_DPM_WATCHDOG_ON_STACK(wd);
 
 	TRACE_DEVICE(dev);
@@ -1385,9 +1370,6 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 		pm_wakeup_event(dev, 0);
 
 	if (pm_wakeup_pending()) {
-		pm_get_active_wakeup_sources(suspend_abort,
-			MAX_SUSPEND_ABORT_LEN);
-		log_suspend_abort_reason(suspend_abort);
 		dev->power.direct_complete = false;
 		async_error = -EBUSY;
 		goto Complete;
@@ -1524,7 +1506,7 @@ int dpm_suspend(pm_message_t state)
 	ktime_t starttime = ktime_get();
 	int error = 0;
 
-//	trace_suspend_resume(TPS("dpm_suspend"), state.event, true);
+	trace_suspend_resume(TPS("dpm_suspend"), state.event, true);
 	might_sleep();
 
 	cpufreq_suspend();
@@ -1562,7 +1544,7 @@ int dpm_suspend(pm_message_t state)
 		dpm_save_failed_step(SUSPEND_SUSPEND);
 	} else
 		dpm_show_time(starttime, state, NULL);
-//	trace_suspend_resume(TPS("dpm_suspend"), state.event, false);
+	trace_suspend_resume(TPS("dpm_suspend"), state.event, false);
 	return error;
 }
 
@@ -1595,11 +1577,6 @@ static int device_prepare(struct device *dev, pm_message_t state)
 
 	dev->power.wakeup_path = device_may_wakeup(dev);
 
-	if (dev->power.no_pm_callbacks) {
-		ret = 1;	/* Let device go direct_complete */
-		goto unlock;
-	}
-
 	if (dev->pm_domain) {
 		info = "preparing power domain ";
 		callback = dev->pm_domain->ops.prepare;
@@ -1622,7 +1599,6 @@ static int device_prepare(struct device *dev, pm_message_t state)
 	if (callback)
 		ret = callback(dev);
 
-unlock:
 	device_unlock(dev);
 
 	if (ret < 0) {
@@ -1653,7 +1629,7 @@ int dpm_prepare(pm_message_t state)
 {
 	int error = 0;
 
-//	trace_suspend_resume(TPS("dpm_prepare"), state.event, true);
+	trace_suspend_resume(TPS("dpm_prepare"), state.event, true);
 	might_sleep();
 
 	mutex_lock(&dpm_list_mtx);
@@ -1663,9 +1639,9 @@ int dpm_prepare(pm_message_t state)
 		get_device(dev);
 		mutex_unlock(&dpm_list_mtx);
 
-//		trace_device_pm_callback_start(dev, "", state.event);
+		trace_device_pm_callback_start(dev, "", state.event);
 		error = device_prepare(dev, state);
-//		trace_device_pm_callback_end(dev, error);
+		trace_device_pm_callback_end(dev, error);
 
 		mutex_lock(&dpm_list_mtx);
 		if (error) {
@@ -1686,7 +1662,7 @@ int dpm_prepare(pm_message_t state)
 		put_device(dev);
 	}
 	mutex_unlock(&dpm_list_mtx);
-//	trace_suspend_resume(TPS("dpm_prepare"), state.event, false);
+	trace_suspend_resume(TPS("dpm_prepare"), state.event, false);
 	return error;
 }
 
@@ -1751,30 +1727,3 @@ void dpm_for_each_dev(void *data, void (*fn)(struct device *, void *))
 	device_pm_unlock();
 }
 EXPORT_SYMBOL_GPL(dpm_for_each_dev);
-
-static bool pm_ops_is_empty(const struct dev_pm_ops *ops)
-{
-	if (!ops)
-		return true;
-
-	return !ops->prepare &&
-	       !ops->suspend &&
-	       !ops->suspend_late &&
-	       !ops->suspend_noirq &&
-	       !ops->resume_noirq &&
-	       !ops->resume_early &&
-	       !ops->resume &&
-	       !ops->complete;
-}
-
-void device_pm_check_callbacks(struct device *dev)
-{
-	spin_lock_irq(&dev->power.lock);
-	dev->power.no_pm_callbacks =
-		(!dev->bus || pm_ops_is_empty(dev->bus->pm)) &&
-		(!dev->class || pm_ops_is_empty(dev->class->pm)) &&
-		(!dev->type || pm_ops_is_empty(dev->type->pm)) &&
-		(!dev->pm_domain || pm_ops_is_empty(&dev->pm_domain->ops)) &&
-		(!dev->driver || pm_ops_is_empty(dev->driver->pm));
-	spin_unlock_irq(&dev->power.lock);
-}

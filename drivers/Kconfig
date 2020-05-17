@@ -54,10 +54,6 @@ source "drivers/char/Kconfig"
 
 source "drivers/i2c/Kconfig"
 
-source "drivers/slimbus/Kconfig"
-
-source "drivers/soundwire/Kconfig"
-
 source "drivers/spi/Kconfig"
 
 source "drivers/spmi/Kconfig"
@@ -108,8 +104,6 @@ source "drivers/memstick/Kconfig"
 
 source "drivers/leds/Kconfig"
 
-source "drivers/switch/Kconfig"
-
 source "drivers/accessibility/Kconfig"
 
 source "drivers/infiniband/Kconfig"
@@ -117,8 +111,6 @@ source "drivers/infiniband/Kconfig"
 source "drivers/edac/Kconfig"
 
 source "drivers/rtc/Kconfig"
-
-source "drivers/esoc/Kconfig"
 
 source "drivers/dma/Kconfig"
 
@@ -205,13 +197,5 @@ source "drivers/hwtracing/stm/Kconfig"
 source "drivers/hwtracing/intel_th/Kconfig"
 
 source "drivers/fpga/Kconfig"
-
-source "drivers/firmware/Kconfig"
-
-source "drivers/bif/Kconfig"
-
-source "drivers/sensors/Kconfig"
-
-source "drivers/tee/Kconfig"
 
 endmenu

@@ -36,7 +36,6 @@ static inline void harden_branch_predictor(void)
 #define UDBG_BUS	(1 << 4)
 
 extern unsigned int user_debug;
-extern char* (*arch_read_hardware_id)(void);
 
 #endif /* !__ASSEMBLY__ */
 

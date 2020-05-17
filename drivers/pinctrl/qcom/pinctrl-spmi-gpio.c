@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2014, 2016, 2018 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2014, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,7 +14,6 @@
 #include <linux/gpio.h>
 #include <linux/module.h>
 #include <linux/of.h>
-#include <linux/of_irq.h>
 #include <linux/pinctrl/pinconf-generic.h>
 #include <linux/pinctrl/pinconf.h>
 #include <linux/pinctrl/pinmux.h>
@@ -40,8 +39,6 @@
 #define PMIC_GPIO_SUBTYPE_GPIOC_4CH		0x5
 #define PMIC_GPIO_SUBTYPE_GPIO_8CH		0x9
 #define PMIC_GPIO_SUBTYPE_GPIOC_8CH		0xd
-#define PMIC_GPIO_SUBTYPE_GPIO_LV		0x10
-#define PMIC_GPIO_SUBTYPE_GPIO_MV		0x11
 
 #define PMIC_MPP_REG_RT_STS			0x10
 #define PMIC_MPP_REG_RT_STS_VAL_MASK		0x1
@@ -50,11 +47,8 @@
 #define PMIC_GPIO_REG_MODE_CTL			0x40
 #define PMIC_GPIO_REG_DIG_VIN_CTL		0x41
 #define PMIC_GPIO_REG_DIG_PULL_CTL		0x42
-#define PMIC_GPIO_REG_LV_MV_DIG_OUT_SOURCE_CTL	0x44
-#define PMIC_GPIO_REG_DIG_IN_CTL		0x43
 #define PMIC_GPIO_REG_DIG_OUT_CTL		0x45
 #define PMIC_GPIO_REG_EN_CTL			0x46
-#define PMIC_GPIO_REG_LV_MV_ANA_PASS_THRU_SEL	0x4A
 
 /* PMIC_GPIO_REG_MODE_CTL */
 #define PMIC_GPIO_REG_MODE_VALUE_SHIFT		0x1
@@ -62,13 +56,6 @@
 #define PMIC_GPIO_REG_MODE_FUNCTION_MASK	0x7
 #define PMIC_GPIO_REG_MODE_DIR_SHIFT		4
 #define PMIC_GPIO_REG_MODE_DIR_MASK		0x7
-
-#define PMIC_GPIO_MODE_DIGITAL_INPUT		0
-#define PMIC_GPIO_MODE_DIGITAL_OUTPUT		1
-#define PMIC_GPIO_MODE_DIGITAL_INPUT_OUTPUT	2
-#define PMIC_GPIO_MODE_ANALOG_PASS_THRU		3
-
-#define PMIC_GPIO_REG_LV_MV_MODE_DIR_MASK	0x3
 
 /* PMIC_GPIO_REG_DIG_VIN_CTL */
 #define PMIC_GPIO_REG_VIN_SHIFT			0
@@ -80,16 +67,6 @@
 
 #define PMIC_GPIO_PULL_DOWN			4
 #define PMIC_GPIO_PULL_DISABLE			5
-
-/* PMIC_GPIO_REG_LV_MV_DIG_OUT_SOURCE_CTL for LV/MV */
-#define PMIC_GPIO_LV_MV_OUTPUT_INVERT		0x80
-#define PMIC_GPIO_LV_MV_OUTPUT_INVERT_SHIFT	7
-#define PMIC_GPIO_LV_MV_OUTPUT_SOURCE_SEL_MASK	0xF
-
-/* PMIC_GPIO_REG_DIG_IN_CTL */
-#define PMIC_GPIO_LV_MV_DIG_IN_DTEST_EN		0x80
-#define PMIC_GPIO_LV_MV_DIG_IN_DTEST_SEL_MASK	0x7
-#define PMIC_GPIO_DIG_IN_DTEST_SEL_MASK		0xf
 
 /* PMIC_GPIO_REG_DIG_OUT_CTL */
 #define PMIC_GPIO_REG_OUT_STRENGTH_SHIFT	0
@@ -110,29 +87,9 @@
 
 #define PMIC_GPIO_PHYSICAL_OFFSET		1
 
-/* PMIC_GPIO_REG_LV_MV_ANA_PASS_THRU_SEL */
-#define PMIC_GPIO_LV_MV_ANA_MUX_SEL_MASK		0x3
-
 /* Qualcomm specific pin configurations */
 #define PMIC_GPIO_CONF_PULL_UP			(PIN_CONFIG_END + 1)
 #define PMIC_GPIO_CONF_STRENGTH			(PIN_CONFIG_END + 2)
-#define PMIC_GPIO_CONF_ATEST			(PIN_CONFIG_END + 3)
-#define PMIC_GPIO_CONF_DTEST_BUFFER		(PIN_CONFIG_END + 4)
-
-/* The index of each function in pmic_gpio_functions[] array */
-enum pmic_gpio_func_index {
-	PMIC_GPIO_FUNC_INDEX_NORMAL	= 0x00,
-	PMIC_GPIO_FUNC_INDEX_PAIRED	= 0x01,
-	PMIC_GPIO_FUNC_INDEX_FUNC1	= 0x02,
-	PMIC_GPIO_FUNC_INDEX_FUNC2	= 0x03,
-	PMIC_GPIO_FUNC_INDEX_FUNC3	= 0x04,
-	PMIC_GPIO_FUNC_INDEX_FUNC4	= 0x05,
-	PMIC_GPIO_FUNC_INDEX_DTEST1	= 0x06,
-	PMIC_GPIO_FUNC_INDEX_DTEST2	= 0x07,
-	PMIC_GPIO_FUNC_INDEX_DTEST3	= 0x08,
-	PMIC_GPIO_FUNC_INDEX_DTEST4	= 0x09,
-	PMIC_GPIO_FUNC_INDEX_ANALOG	= 0x10,
-};
 
 /**
  * struct pmic_gpio_pad - keep current GPIO settings
@@ -144,16 +101,12 @@ enum pmic_gpio_func_index {
  *	open-drain or open-source mode.
  * @output_enabled: Set to true if GPIO output logic is enabled.
  * @input_enabled: Set to true if GPIO input buffer logic is enabled.
- * @lv_mv_type: Set to true if GPIO subtype is GPIO_LV(0x10) or GPIO_MV(0x11).
  * @num_sources: Number of power-sources supported by this GPIO.
  * @power_source: Current power-source used.
  * @buffer_type: Push-pull, open-drain or open-source.
  * @pullup: Constant current which flow trough GPIO output buffer.
  * @strength: No, Low, Medium, High
  * @function: See pmic_gpio_functions[]
- * @atest: the ATEST selection for GPIO analog-pass-through mode
- * @dtest_buffer: the DTEST buffer selection for digital input mode,
- *	the default value is INT_MAX if not used.
  */
 struct pmic_gpio_pad {
 	u16		base;
@@ -163,15 +116,12 @@ struct pmic_gpio_pad {
 	bool		have_buffer;
 	bool		output_enabled;
 	bool		input_enabled;
-	bool		lv_mv_type;
 	unsigned int	num_sources;
 	unsigned int	power_source;
 	unsigned int	buffer_type;
 	unsigned int	pullup;
 	unsigned int	strength;
 	unsigned int	function;
-	unsigned int	atest;
-	unsigned int	dtest_buffer;
 };
 
 struct pmic_gpio_state {
@@ -184,15 +134,12 @@ struct pmic_gpio_state {
 static const struct pinconf_generic_params pmic_gpio_bindings[] = {
 	{"qcom,pull-up-strength",	PMIC_GPIO_CONF_PULL_UP,		0},
 	{"qcom,drive-strength",		PMIC_GPIO_CONF_STRENGTH,	0},
-	{"qcom,atest",			PMIC_GPIO_CONF_ATEST,	0},
-	{"qcom,dtest-buffer",		PMIC_GPIO_CONF_DTEST_BUFFER,	0},
 };
 
 #ifdef CONFIG_DEBUG_FS
 static const struct pin_config_item pmic_conf_items[ARRAY_SIZE(pmic_gpio_bindings)] = {
 	PCONFDUMP(PMIC_GPIO_CONF_PULL_UP,  "pull up strength", NULL, true),
 	PCONFDUMP(PMIC_GPIO_CONF_STRENGTH, "drive-strength", NULL, true),
-	PCONFDUMP(PMIC_GPIO_CONF_ATEST, "atest", NULL, true),
 };
 #endif
 
@@ -204,25 +151,11 @@ static const char *const pmic_gpio_groups[] = {
 	"gpio30", "gpio31", "gpio32", "gpio33", "gpio34", "gpio35", "gpio36",
 };
 
-/*
- * Treat LV/MV GPIO analog-pass-through mode as a function, add it
- * to the end of the function list. Add placeholder for the reserved
- * functions defined in LV/MV OUTPUT_SOURCE_SEL register.
- */
 static const char *const pmic_gpio_functions[] = {
-	[PMIC_GPIO_FUNC_INDEX_NORMAL]	= PMIC_GPIO_FUNC_NORMAL,
-	[PMIC_GPIO_FUNC_INDEX_PAIRED]	= PMIC_GPIO_FUNC_PAIRED,
-	[PMIC_GPIO_FUNC_INDEX_FUNC1]	= PMIC_GPIO_FUNC_FUNC1,
-	[PMIC_GPIO_FUNC_INDEX_FUNC2]	= PMIC_GPIO_FUNC_FUNC2,
-	[PMIC_GPIO_FUNC_INDEX_FUNC3]	= PMIC_GPIO_FUNC_FUNC3,
-	[PMIC_GPIO_FUNC_INDEX_FUNC4]	= PMIC_GPIO_FUNC_FUNC4,
-	[PMIC_GPIO_FUNC_INDEX_DTEST1]	= PMIC_GPIO_FUNC_DTEST1,
-	[PMIC_GPIO_FUNC_INDEX_DTEST2]	= PMIC_GPIO_FUNC_DTEST2,
-	[PMIC_GPIO_FUNC_INDEX_DTEST3]	= PMIC_GPIO_FUNC_DTEST3,
-	[PMIC_GPIO_FUNC_INDEX_DTEST4]	= PMIC_GPIO_FUNC_DTEST4,
-	"reserved-a", "reserved-b", "reserved-c",
-	"reserved-d", "reserved-e", "reserved-f",
-	[PMIC_GPIO_FUNC_INDEX_ANALOG]	= PMIC_GPIO_FUNC_ANALOG,
+	PMIC_GPIO_FUNC_NORMAL, PMIC_GPIO_FUNC_PAIRED,
+	PMIC_GPIO_FUNC_FUNC1, PMIC_GPIO_FUNC_FUNC2,
+	PMIC_GPIO_FUNC_DTEST1, PMIC_GPIO_FUNC_DTEST2,
+	PMIC_GPIO_FUNC_DTEST3, PMIC_GPIO_FUNC_DTEST4,
 };
 
 static inline struct pmic_gpio_state *to_gpio_state(struct gpio_chip *chip)
@@ -319,74 +252,21 @@ static int pmic_gpio_set_mux(struct pinctrl_dev *pctldev, unsigned function,
 
 	pad->function = function;
 
-	val = PMIC_GPIO_MODE_DIGITAL_INPUT;
+	val = 0;
 	if (pad->output_enabled) {
 		if (pad->input_enabled)
-			val = PMIC_GPIO_MODE_DIGITAL_INPUT_OUTPUT;
+			val = 2;
 		else
-			val = PMIC_GPIO_MODE_DIGITAL_OUTPUT;
+			val = 1;
 	}
 
-	if (function > PMIC_GPIO_FUNC_INDEX_DTEST4 &&
-			function < PMIC_GPIO_FUNC_INDEX_ANALOG) {
-		pr_err("reserved function: %s hasn't been enabled\n",
-				pmic_gpio_functions[function]);
-		return -EINVAL;
-	}
+	val = val << PMIC_GPIO_REG_MODE_DIR_SHIFT;
+	val |= pad->function << PMIC_GPIO_REG_MODE_FUNCTION_SHIFT;
+	val |= pad->out_value & PMIC_GPIO_REG_MODE_VALUE_SHIFT;
 
-	if (pad->lv_mv_type) {
-		if (pad->function == PMIC_GPIO_FUNC_INDEX_ANALOG) {
-			val = PMIC_GPIO_MODE_ANALOG_PASS_THRU;
-			ret = pmic_gpio_write(state, pad,
-					PMIC_GPIO_REG_MODE_CTL, val);
-			if (ret < 0)
-				return ret;
-
-			ret = pmic_gpio_write(state, pad,
-					PMIC_GPIO_REG_LV_MV_ANA_PASS_THRU_SEL,
-					pad->atest);
-			if (ret < 0)
-				return ret;
-		} else {
-			ret = pmic_gpio_write(state, pad,
-					PMIC_GPIO_REG_MODE_CTL, val);
-			if (ret < 0)
-				return ret;
-
-			val = pad->out_value
-				<< PMIC_GPIO_LV_MV_OUTPUT_INVERT_SHIFT;
-			val |= pad->function
-				& PMIC_GPIO_LV_MV_OUTPUT_SOURCE_SEL_MASK;
-			ret = pmic_gpio_write(state, pad,
-				PMIC_GPIO_REG_LV_MV_DIG_OUT_SOURCE_CTL, val);
-			if (ret < 0)
-				return ret;
-		}
-	} else {
-		/*
-		 * GPIO not of LV/MV subtype doesn't have "func3", "func4"
-		 * "analog" functions, and "dtest1" to "dtest4" functions
-		 * have register value 2 bits lower than the function index
-		 * in pmic_gpio_functions[].
-		 */
-		if (function == PMIC_GPIO_FUNC_INDEX_FUNC3
-				|| function == PMIC_GPIO_FUNC_INDEX_FUNC4
-				|| function == PMIC_GPIO_FUNC_INDEX_ANALOG) {
-			return -EINVAL;
-		} else if (function >= PMIC_GPIO_FUNC_INDEX_DTEST1 &&
-				function <= PMIC_GPIO_FUNC_INDEX_DTEST4) {
-			pad->function -= (PMIC_GPIO_FUNC_INDEX_DTEST1 -
-					PMIC_GPIO_FUNC_INDEX_FUNC3);
-		}
-
-		val = val << PMIC_GPIO_REG_MODE_DIR_SHIFT;
-		val |= pad->function << PMIC_GPIO_REG_MODE_FUNCTION_SHIFT;
-		val |= pad->out_value & PMIC_GPIO_REG_MODE_VALUE_SHIFT;
-
-		ret = pmic_gpio_write(state, pad, PMIC_GPIO_REG_MODE_CTL, val);
-		if (ret < 0)
-			return ret;
-	}
+	ret = pmic_gpio_write(state, pad, PMIC_GPIO_REG_MODE_CTL, val);
+	if (ret < 0)
+		return ret;
 
 	val = pad->is_enabled << PMIC_GPIO_REG_MASTER_EN_SHIFT;
 
@@ -462,12 +342,6 @@ static int pmic_gpio_config_get(struct pinctrl_dev *pctldev,
 	case PMIC_GPIO_CONF_STRENGTH:
 		arg = pad->strength;
 		break;
-	case PMIC_GPIO_CONF_ATEST:
-		arg = pad->atest;
-		break;
-	case PMIC_GPIO_CONF_DTEST_BUFFER:
-		arg = pad->dtest_buffer;
-		break;
 	default:
 		return -EINVAL;
 	}
@@ -521,7 +395,7 @@ static int pmic_gpio_config_set(struct pinctrl_dev *pctldev, unsigned int pin,
 			pad->is_enabled = false;
 			break;
 		case PIN_CONFIG_POWER_SOURCE:
-			if (arg >= pad->num_sources)
+			if (arg > pad->num_sources)
 				return -EINVAL;
 			pad->power_source = arg;
 			break;
@@ -538,21 +412,9 @@ static int pmic_gpio_config_set(struct pinctrl_dev *pctldev, unsigned int pin,
 			pad->pullup = arg;
 			break;
 		case PMIC_GPIO_CONF_STRENGTH:
-			if (arg > PMIC_GPIO_STRENGTH_HIGH)
+			if (arg > PMIC_GPIO_STRENGTH_LOW)
 				return -EINVAL;
 			pad->strength = arg;
-			break;
-		case PMIC_GPIO_CONF_ATEST:
-			if (arg > PMIC_GPIO_AOUT_ATEST4)
-				return -EINVAL;
-			pad->atest = arg;
-			break;
-		case PMIC_GPIO_CONF_DTEST_BUFFER:
-			if ((pad->lv_mv_type && arg > PMIC_GPIO_DIN_DTEST4)
-					|| (!pad->lv_mv_type && arg >
-					PMIC_GPIO_DIG_IN_DTEST_SEL_MASK))
-				return -EINVAL;
-			pad->dtest_buffer = arg;
 			break;
 		default:
 			return -EINVAL;
@@ -578,64 +440,19 @@ static int pmic_gpio_config_set(struct pinctrl_dev *pctldev, unsigned int pin,
 	if (ret < 0)
 		return ret;
 
-	val = PMIC_GPIO_MODE_DIGITAL_INPUT;
+	val = 0;
 	if (pad->output_enabled) {
 		if (pad->input_enabled)
-			val = PMIC_GPIO_MODE_DIGITAL_INPUT_OUTPUT;
+			val = 2;
 		else
-			val = PMIC_GPIO_MODE_DIGITAL_OUTPUT;
+			val = 1;
 	}
 
-	if (pad->dtest_buffer != INT_MAX) {
-		val = pad->dtest_buffer;
-		if (pad->lv_mv_type)
-			val |= PMIC_GPIO_LV_MV_DIG_IN_DTEST_EN;
+	val = val << PMIC_GPIO_REG_MODE_DIR_SHIFT;
+	val |= pad->function << PMIC_GPIO_REG_MODE_FUNCTION_SHIFT;
+	val |= pad->out_value & PMIC_GPIO_REG_MODE_VALUE_SHIFT;
 
-		ret = pmic_gpio_write(state, pad,
-				PMIC_GPIO_REG_DIG_IN_CTL, val);
-		if (ret < 0)
-			return ret;
-	}
-
-	if (pad->lv_mv_type) {
-		if (pad->function == PMIC_GPIO_FUNC_INDEX_ANALOG) {
-			val = PMIC_GPIO_MODE_ANALOG_PASS_THRU;
-			ret = pmic_gpio_write(state, pad,
-					PMIC_GPIO_REG_MODE_CTL, val);
-			if (ret < 0)
-				return ret;
-
-			ret = pmic_gpio_write(state, pad,
-					PMIC_GPIO_REG_LV_MV_ANA_PASS_THRU_SEL,
-					pad->atest);
-			if (ret < 0)
-				return ret;
-		} else {
-			ret = pmic_gpio_write(state, pad,
-					PMIC_GPIO_REG_MODE_CTL, val);
-			if (ret < 0)
-				return ret;
-
-			val = pad->out_value
-				<< PMIC_GPIO_LV_MV_OUTPUT_INVERT_SHIFT;
-			val |= pad->function
-				& PMIC_GPIO_LV_MV_OUTPUT_SOURCE_SEL_MASK;
-			ret = pmic_gpio_write(state, pad,
-				PMIC_GPIO_REG_LV_MV_DIG_OUT_SOURCE_CTL, val);
-			if (ret < 0)
-				return ret;
-		}
-	} else {
-		val = val << PMIC_GPIO_REG_MODE_DIR_SHIFT;
-		val |= pad->function << PMIC_GPIO_REG_MODE_FUNCTION_SHIFT;
-		val |= pad->out_value & PMIC_GPIO_REG_MODE_VALUE_SHIFT;
-
-		ret = pmic_gpio_write(state, pad, PMIC_GPIO_REG_MODE_CTL, val);
-		if (ret < 0)
-			return ret;
-	}
-
-	return ret;
+	return pmic_gpio_write(state, pad, PMIC_GPIO_REG_MODE_CTL, val);
 }
 
 static void pmic_gpio_config_dbg_show(struct pinctrl_dev *pctldev,
@@ -643,7 +460,7 @@ static void pmic_gpio_config_dbg_show(struct pinctrl_dev *pctldev,
 {
 	struct pmic_gpio_state *state = pinctrl_dev_get_drvdata(pctldev);
 	struct pmic_gpio_pad *pad;
-	int ret, val, function;
+	int ret, val;
 
 	static const char *const biases[] = {
 		"pull-up 30uA", "pull-up 1.5uA", "pull-up 31.5uA",
@@ -674,28 +491,14 @@ static void pmic_gpio_config_dbg_show(struct pinctrl_dev *pctldev,
 			ret &= PMIC_MPP_REG_RT_STS_VAL_MASK;
 			pad->out_value = ret;
 		}
-		/*
-		 * For GPIO not of LV/MV subtypes, the register value of
-		 * the function mapping from "dtest1" to "dtest4" is 2 bits
-		 * lower than the function index in pmic_gpio_functions[].
-		 */
-		if (!pad->lv_mv_type &&
-				pad->function >= PMIC_GPIO_FUNC_INDEX_FUNC3) {
-			function = pad->function + (PMIC_GPIO_FUNC_INDEX_DTEST1
-					- PMIC_GPIO_FUNC_INDEX_FUNC3);
-		} else {
-			function = pad->function;
-		}
 
 		seq_printf(s, " %-4s", pad->output_enabled ? "out" : "in");
-		seq_printf(s, " %-7s", pmic_gpio_functions[function]);
+		seq_printf(s, " %-7s", pmic_gpio_functions[pad->function]);
 		seq_printf(s, " vin-%d", pad->power_source);
 		seq_printf(s, " %-27s", biases[pad->pullup]);
 		seq_printf(s, " %-10s", buffer_types[pad->buffer_type]);
 		seq_printf(s, " %-4s", pad->out_value ? "high" : "low");
 		seq_printf(s, " %-7s", strengths[pad->strength]);
-		if (pad->dtest_buffer != INT_MAX)
-			seq_printf(s, " dtest buffer %d", pad->dtest_buffer);
 	}
 }
 
@@ -835,71 +638,39 @@ static int pmic_gpio_populate(struct pmic_gpio_state *state,
 	case PMIC_GPIO_SUBTYPE_GPIOC_8CH:
 		pad->num_sources = 8;
 		break;
-	case PMIC_GPIO_SUBTYPE_GPIO_LV:
-		pad->num_sources = 1;
-		pad->have_buffer = true;
-		pad->lv_mv_type = true;
-		break;
-	case PMIC_GPIO_SUBTYPE_GPIO_MV:
-		pad->num_sources = 2;
-		pad->have_buffer = true;
-		pad->lv_mv_type = true;
-		break;
 	default:
 		dev_err(state->dev, "unknown GPIO type 0x%x\n", subtype);
 		return -ENODEV;
 	}
 
-	if (pad->lv_mv_type) {
-		val = pmic_gpio_read(state, pad,
-				PMIC_GPIO_REG_LV_MV_DIG_OUT_SOURCE_CTL);
-		if (val < 0)
-			return val;
+	val = pmic_gpio_read(state, pad, PMIC_GPIO_REG_MODE_CTL);
+	if (val < 0)
+		return val;
 
-		pad->out_value = !!(val & PMIC_GPIO_LV_MV_OUTPUT_INVERT);
-		pad->function = val & PMIC_GPIO_LV_MV_OUTPUT_SOURCE_SEL_MASK;
+	pad->out_value = val & PMIC_GPIO_REG_MODE_VALUE_SHIFT;
 
-		val = pmic_gpio_read(state, pad, PMIC_GPIO_REG_MODE_CTL);
-		if (val < 0)
-			return val;
-
-		dir = val & PMIC_GPIO_REG_LV_MV_MODE_DIR_MASK;
-	} else {
-		val = pmic_gpio_read(state, pad, PMIC_GPIO_REG_MODE_CTL);
-		if (val < 0)
-			return val;
-
-		pad->out_value = val & PMIC_GPIO_REG_MODE_VALUE_SHIFT;
-
-		dir = val >> PMIC_GPIO_REG_MODE_DIR_SHIFT;
-		dir &= PMIC_GPIO_REG_MODE_DIR_MASK;
-		pad->function = val >> PMIC_GPIO_REG_MODE_FUNCTION_SHIFT;
-		pad->function &= PMIC_GPIO_REG_MODE_FUNCTION_MASK;
-	}
-
+	dir = val >> PMIC_GPIO_REG_MODE_DIR_SHIFT;
+	dir &= PMIC_GPIO_REG_MODE_DIR_MASK;
 	switch (dir) {
-	case PMIC_GPIO_MODE_DIGITAL_INPUT:
+	case 0:
 		pad->input_enabled = true;
 		pad->output_enabled = false;
 		break;
-	case PMIC_GPIO_MODE_DIGITAL_OUTPUT:
+	case 1:
 		pad->input_enabled = false;
 		pad->output_enabled = true;
 		break;
-	case PMIC_GPIO_MODE_DIGITAL_INPUT_OUTPUT:
+	case 2:
 		pad->input_enabled = true;
 		pad->output_enabled = true;
-		break;
-	case PMIC_GPIO_MODE_ANALOG_PASS_THRU:
-		if (pad->lv_mv_type)
-			pad->function = PMIC_GPIO_FUNC_INDEX_ANALOG;
-		else
-			return -ENODEV;
 		break;
 	default:
 		dev_err(state->dev, "unknown GPIO direction\n");
 		return -ENODEV;
 	}
+
+	pad->function = val >> PMIC_GPIO_REG_MODE_FUNCTION_SHIFT;
+	pad->function &= PMIC_GPIO_REG_MODE_FUNCTION_MASK;
 
 	val = pmic_gpio_read(state, pad, PMIC_GPIO_REG_DIG_VIN_CTL);
 	if (val < 0)
@@ -915,17 +686,6 @@ static int pmic_gpio_populate(struct pmic_gpio_state *state,
 	pad->pullup = val >> PMIC_GPIO_REG_PULL_SHIFT;
 	pad->pullup &= PMIC_GPIO_REG_PULL_MASK;
 
-	val = pmic_gpio_read(state, pad, PMIC_GPIO_REG_DIG_IN_CTL);
-	if (val < 0)
-		return val;
-
-	if (pad->lv_mv_type && (val & PMIC_GPIO_LV_MV_DIG_IN_DTEST_EN))
-		pad->dtest_buffer = val & PMIC_GPIO_LV_MV_DIG_IN_DTEST_SEL_MASK;
-	else if (!pad->lv_mv_type)
-		pad->dtest_buffer = val & PMIC_GPIO_DIG_IN_DTEST_SEL_MASK;
-	else
-		pad->dtest_buffer = INT_MAX;
-
 	val = pmic_gpio_read(state, pad, PMIC_GPIO_REG_DIG_OUT_CTL);
 	if (val < 0)
 		return val;
@@ -936,13 +696,6 @@ static int pmic_gpio_populate(struct pmic_gpio_state *state,
 	pad->buffer_type = val >> PMIC_GPIO_REG_OUT_TYPE_SHIFT;
 	pad->buffer_type &= PMIC_GPIO_REG_OUT_TYPE_MASK;
 
-	if (pad->function == PMIC_GPIO_FUNC_INDEX_ANALOG) {
-		val = pmic_gpio_read(state, pad,
-				PMIC_GPIO_REG_LV_MV_ANA_PASS_THRU_SEL);
-		if (val < 0)
-			return val;
-		pad->atest = val & PMIC_GPIO_LV_MV_ANA_MUX_SEL_MASK;
-	}
 	/* Pin could be disabled with PIN_CONFIG_BIAS_HIGH_IMPEDANCE */
 	pad->is_enabled = true;
 	return 0;
@@ -956,19 +709,18 @@ static int pmic_gpio_probe(struct platform_device *pdev)
 	struct pmic_gpio_pad *pad, *pads;
 	struct pmic_gpio_state *state;
 	int ret, npins, i;
-	u32 reg;
+	u32 res[2];
 
-	ret = of_property_read_u32(dev->of_node, "reg", &reg);
+	ret = of_property_read_u32_array(dev->of_node, "reg", res, 2);
 	if (ret < 0) {
-		dev_err(dev, "missing base address");
+		dev_err(dev, "missing base address and/or range");
 		return ret;
 	}
 
-	npins = platform_irq_count(pdev);
+	npins = res[1] / PMIC_GPIO_ADDRESS_RANGE;
+
 	if (!npins)
 		return -EINVAL;
-	if (npins < 0)
-		return npins;
 
 	BUG_ON(npins > ARRAY_SIZE(pmic_gpio_groups));
 
@@ -1016,7 +768,7 @@ static int pmic_gpio_probe(struct platform_device *pdev)
 		if (pad->irq < 0)
 			return pad->irq;
 
-		pad->base = reg + i * PMIC_GPIO_ADDRESS_RANGE;
+		pad->base = res[0] + i * PMIC_GPIO_ADDRESS_RANGE;
 
 		ret = pmic_gpio_populate(state, pad);
 		if (ret < 0)
@@ -1082,7 +834,6 @@ static const struct of_device_id pmic_gpio_of_match[] = {
 	{ .compatible = "qcom,pm8916-gpio" },	/* 4 GPIO's */
 	{ .compatible = "qcom,pm8941-gpio" },	/* 36 GPIO's */
 	{ .compatible = "qcom,pma8084-gpio" },	/* 22 GPIO's */
-	{ .compatible = "qcom,spmi-gpio" }, /* Generic */
 	{ },
 };
 

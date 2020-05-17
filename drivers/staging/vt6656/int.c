@@ -101,7 +101,7 @@ static int vnt_int_report_rate(struct vnt_private *priv, u8 pkt_no, u8 tsr)
 		else if (context->fb_option == AUTO_FB_1)
 			tx_rate = fallback_rate1[tx_rate][retry];
 
-		if (info->band == NL80211_BAND_5GHZ)
+		if (info->band == IEEE80211_BAND_5GHZ)
 			idx = tx_rate - RATE_6M;
 		else
 			idx = tx_rate;
@@ -157,7 +157,8 @@ void vnt_int_process_data(struct vnt_private *priv)
 				priv->wake_up_count =
 					priv->hw->conf.listen_interval;
 
-			--priv->wake_up_count;
+			if (priv->wake_up_count)
+				--priv->wake_up_count;
 
 			/* Turn on wake up to listen next beacon */
 			if (priv->wake_up_count == 1)

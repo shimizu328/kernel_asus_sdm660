@@ -247,6 +247,8 @@ void perf_output_end(struct perf_output_handle *handle)
 	rcu_read_unlock();
 }
 
+static void rb_irq_work(struct irq_work *work);
+
 static void
 ring_buffer_init(struct ring_buffer *rb, long watermark, int flags)
 {
@@ -267,6 +269,16 @@ ring_buffer_init(struct ring_buffer *rb, long watermark, int flags)
 
 	INIT_LIST_HEAD(&rb->event_list);
 	spin_lock_init(&rb->event_lock);
+	init_irq_work(&rb->irq_work, rb_irq_work);
+}
+
+static void ring_buffer_put_async(struct ring_buffer *rb)
+{
+	if (!atomic_dec_and_test(&rb->refcount))
+		return;
+
+	rb->rcu_head.next = (void *)rb;
+	irq_work_queue(&rb->irq_work);
 }
 
 /*
@@ -278,10 +290,6 @@ ring_buffer_init(struct ring_buffer *rb, long watermark, int flags)
  * The ordering is similar to that of perf_output_{begin,end}, with
  * the exception of (B), which should be taken care of by the pmu
  * driver, since ordering rules will differ depending on hardware.
- *
- * Call this from pmu::start(); see the comment in perf_aux_output_end()
- * about its use in pmu callbacks. Both can also be called from the PMI
- * handler if needed.
  */
 void *perf_aux_output_begin(struct perf_output_handle *handle,
 			    struct perf_event *event)
@@ -310,7 +318,7 @@ void *perf_aux_output_begin(struct perf_output_handle *handle,
 	 * the aux buffer is in perf_mmap_close(), about to get freed.
 	 */
 	if (!atomic_read(&rb->aux_mmap_count))
-		goto err_put;
+		goto err;
 
 	/*
 	 * Nesting is not supported for AUX area, make sure nested
@@ -353,11 +361,10 @@ void *perf_aux_output_begin(struct perf_output_handle *handle,
 	return handle->rb->aux_priv;
 
 err_put:
-	/* can't be last */
 	rb_free_aux(rb);
 
 err:
-	ring_buffer_put(rb);
+	ring_buffer_put_async(rb);
 	handle->event = NULL;
 
 	return NULL;
@@ -368,10 +375,6 @@ err:
  * aux_head and posting a PERF_RECORD_AUX into the perf buffer. It is the
  * pmu driver's responsibility to observe ordering rules of the hardware,
  * so that all the data is externally visible before this is called.
- *
- * Note: this has to be called from pmu::stop() callback, as the assumption
- * of the AUX buffer management code is that after pmu::stop(), the AUX
- * transaction must be stopped and therefore drop the AUX reference count.
  */
 void perf_aux_output_end(struct perf_output_handle *handle, unsigned long size,
 			 bool truncated)
@@ -419,9 +422,8 @@ void perf_aux_output_end(struct perf_output_handle *handle, unsigned long size,
 	handle->event = NULL;
 
 	local_set(&rb->aux_nest, 0);
-	/* can't be last */
 	rb_free_aux(rb);
-	ring_buffer_put(rb);
+	ring_buffer_put_async(rb);
 }
 
 /*
@@ -502,14 +504,6 @@ static void __rb_free_aux(struct ring_buffer *rb)
 {
 	int pg;
 
-	/*
-	 * Should never happen, the last reference should be dropped from
-	 * perf_mmap_close() path, which first stops aux transactions (which
-	 * in turn are the atomic holders of aux_refcount) and then does the
-	 * last rb_free_aux().
-	 */
-	WARN_ON_ONCE(in_atomic());
-
 	if (rb->aux_priv) {
 		rb->free_aux(rb->aux_priv);
 		rb->free_aux = NULL;
@@ -588,7 +582,7 @@ int rb_alloc_aux(struct ring_buffer *rb, struct perf_event *event,
 			goto out;
 	}
 
-	rb->aux_priv = event->pmu->setup_aux(event, rb->aux_pages, nr_pages,
+	rb->aux_priv = event->pmu->setup_aux(event->cpu, rb->aux_pages, nr_pages,
 					     overwrite);
 	if (!rb->aux_priv)
 		goto out;
@@ -621,7 +615,18 @@ out:
 void rb_free_aux(struct ring_buffer *rb)
 {
 	if (atomic_dec_and_test(&rb->aux_refcount))
+		irq_work_queue(&rb->irq_work);
+}
+
+static void rb_irq_work(struct irq_work *work)
+{
+	struct ring_buffer *rb = container_of(work, struct ring_buffer, irq_work);
+
+	if (!atomic_read(&rb->aux_refcount))
 		__rb_free_aux(rb);
+
+	if (rb->rcu_head.next == (void *)rb)
+		call_rcu(&rb->rcu_head, rb_free_rcu);
 }
 
 #ifndef CONFIG_PERF_USE_VMALLOC

@@ -1099,7 +1099,7 @@ EXPORT_SYMBOL_GPL(__get_task_comm);
 void __set_task_comm(struct task_struct *tsk, const char *buf, bool exec)
 {
 	task_lock(tsk);
-//	trace_task_rename(tsk, buf);
+	trace_task_rename(tsk, buf);
 	strlcpy(tsk->comm, buf, sizeof(tsk->comm));
 	task_unlock(tsk);
 	perf_event_comm(tsk, exec);
@@ -1157,10 +1157,8 @@ EXPORT_SYMBOL(flush_old_exec);
 void would_dump(struct linux_binprm *bprm, struct file *file)
 {
 	struct inode *inode = file_inode(file);
-
-	if (inode_permission2(file->f_path.mnt, inode, MAY_READ) < 0) {
+	if (inode_permission(inode, MAY_READ) < 0) {
 		struct user_namespace *old, *user_ns;
-
 		bprm->interp_flags |= BINPRM_FLAGS_ENFORCE_NONDUMP;
 
 		/* Ensure mm->user_ns contains the executable */
@@ -1209,7 +1207,7 @@ void setup_new_exec(struct linux_binprm * bprm)
 
 	/* An exec changes our domain. We are no longer part of the thread
 	   group */
-	current->self_exec_id++;
+	WRITE_ONCE(current->self_exec_id, current->self_exec_id + 1);
 	flush_signal_handlers(current, 0);
 }
 EXPORT_SYMBOL(setup_new_exec);
@@ -1517,7 +1515,7 @@ static int exec_binprm(struct linux_binprm *bprm)
 	ret = search_binary_handler(bprm);
 	if (ret >= 0) {
 		audit_bprm(bprm);
-//		trace_sched_process_exec(current, old_pid, bprm);
+		trace_sched_process_exec(current, old_pid, bprm);
 		ptrace_event(PTRACE_EVENT_EXEC, old_vpid);
 		proc_exec_connector(current);
 	}

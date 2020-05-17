@@ -31,10 +31,7 @@
 #include <linux/err.h>
 #include <linux/pci.h>
 #include <linux/bitops.h>
-#include <linux/debugfs.h>
 #include <trace/events/iommu.h>
-
-#include "iommu-debug.h"
 
 static struct kset *iommu_group_kset;
 static struct ida iommu_group_ida;
@@ -368,8 +365,6 @@ static int iommu_group_create_direct_mappings(struct iommu_group *group,
 
 	}
 
-	iommu_flush_tlb_all(domain);
-
 out:
 	iommu_put_dm_regions(dev, &mappings);
 
@@ -440,7 +435,7 @@ rename:
 	blocking_notifier_call_chain(&group->notifier,
 				     IOMMU_GROUP_NOTIFY_ADD_DEVICE, dev);
 
-//	trace_add_device_to_group(group->id, dev);
+	trace_add_device_to_group(group->id, dev);
 
 	pr_info("Adding device %s to group %d\n", dev_name(dev), group->id);
 
@@ -498,7 +493,7 @@ void iommu_group_remove_device(struct device *dev)
 	sysfs_remove_link(group->devices_kobj, device->name);
 	sysfs_remove_link(&dev->kobj, "iommu_group");
 
-//	trace_remove_device_from_group(group->id, dev);
+	trace_remove_device_from_group(group->id, dev);
 
 	kfree(device->name);
 	kfree(device);
@@ -1040,8 +1035,6 @@ EXPORT_SYMBOL_GPL(bus_set_iommu);
 
 bool iommu_present(struct bus_type *bus)
 {
-	if (!bus)
-		return false;
 	return bus->iommu_ops != NULL;
 }
 EXPORT_SYMBOL_GPL(iommu_present);
@@ -1078,45 +1071,6 @@ void iommu_set_fault_handler(struct iommu_domain *domain,
 }
 EXPORT_SYMBOL_GPL(iommu_set_fault_handler);
 
-/**
- * iommu_trigger_fault() - trigger an IOMMU fault
- * @domain: iommu domain
- *
- * Triggers a fault on the device to which this domain is attached.
- *
- * This function should only be used for debugging purposes, for obvious
- * reasons.
- */
-void iommu_trigger_fault(struct iommu_domain *domain, unsigned long flags)
-{
-	if (domain->ops->trigger_fault)
-		domain->ops->trigger_fault(domain, flags);
-}
-
-/**
- * iommu_reg_read() - read an IOMMU register
- *
- * Reads the IOMMU register at the given offset.
- */
-unsigned long iommu_reg_read(struct iommu_domain *domain, unsigned long offset)
-{
-	if (domain->ops->reg_read)
-		return domain->ops->reg_read(domain, offset);
-	return 0;
-}
-
-/**
- * iommu_reg_write() - write an IOMMU register
- *
- * Writes the given value to the IOMMU register at the given offset.
- */
-void iommu_reg_write(struct iommu_domain *domain, unsigned long offset,
-		     unsigned long val)
-{
-	if (domain->ops->reg_write)
-		domain->ops->reg_write(domain, offset, val);
-}
-
 static struct iommu_domain *__iommu_domain_alloc(struct bus_type *bus,
 						 unsigned type)
 {
@@ -1143,7 +1097,6 @@ EXPORT_SYMBOL_GPL(iommu_domain_alloc);
 
 void iommu_domain_free(struct iommu_domain *domain)
 {
-	iommu_debug_domain_remove(domain);
 	domain->ops->domain_free(domain);
 }
 EXPORT_SYMBOL_GPL(iommu_domain_free);
@@ -1156,10 +1109,8 @@ static int __iommu_attach_device(struct iommu_domain *domain,
 		return -ENODEV;
 
 	ret = domain->ops->attach_dev(domain, dev);
-	if (!ret) {
-//		trace_attach_device_to_domain(dev);
-		iommu_debug_attach_device(domain, dev);
-	}
+	if (!ret)
+		trace_attach_device_to_domain(dev);
 	return ret;
 }
 
@@ -1199,7 +1150,7 @@ static void __iommu_detach_device(struct iommu_domain *domain,
 		return;
 
 	domain->ops->detach_dev(domain, dev);
-//	trace_detach_device_from_domain(dev);
+	trace_detach_device_from_domain(dev);
 }
 
 void iommu_detach_device(struct iommu_domain *domain, struct device *dev)
@@ -1338,40 +1289,8 @@ phys_addr_t iommu_iova_to_phys(struct iommu_domain *domain, dma_addr_t iova)
 }
 EXPORT_SYMBOL_GPL(iommu_iova_to_phys);
 
-phys_addr_t iommu_iova_to_phys_hard(struct iommu_domain *domain,
-				    dma_addr_t iova)
-{
-	if (unlikely(domain->ops->iova_to_phys_hard == NULL))
-		return 0;
-
-	return domain->ops->iova_to_phys_hard(domain, iova);
-}
-
-uint64_t iommu_iova_to_pte(struct iommu_domain *domain,
-				    dma_addr_t iova)
-{
-	if (unlikely(domain->ops->iova_to_pte == NULL))
-		return 0;
-
-	return domain->ops->iova_to_pte(domain, iova);
-}
-
-bool iommu_is_iova_coherent(struct iommu_domain *domain, dma_addr_t iova)
-{
-	if (unlikely(domain->ops->is_iova_coherent == NULL))
-		return 0;
-
-	return domain->ops->is_iova_coherent(domain, iova);
-}
-static unsigned long iommu_get_pgsize_bitmap(struct iommu_domain *domain)
-{
-	if (domain->ops->get_pgsize_bitmap)
-		return domain->ops->get_pgsize_bitmap(domain);
-	return domain->ops->pgsize_bitmap;
-}
-
-size_t iommu_pgsize(unsigned long pgsize_bitmap,
-		    unsigned long addr_merge, size_t size)
+static size_t iommu_pgsize(struct iommu_domain *domain,
+			   unsigned long addr_merge, size_t size)
 {
 	unsigned int pgsize_idx;
 	size_t pgsize;
@@ -1390,14 +1309,10 @@ size_t iommu_pgsize(unsigned long pgsize_bitmap,
 	pgsize = (1UL << (pgsize_idx + 1)) - 1;
 
 	/* throw away page sizes not supported by the hardware */
-	pgsize &= pgsize_bitmap;
+	pgsize &= domain->ops->pgsize_bitmap;
 
 	/* make sure we're still sane */
-	if (!pgsize) {
-		pr_err("invalid pgsize/addr/size! 0x%lx 0x%lx 0x%zx\n",
-		       pgsize_bitmap, addr_merge, size);
-		BUG();
-	}
+	BUG_ON(!pgsize);
 
 	/* pick the biggest page */
 	pgsize_idx = __fls(pgsize);
@@ -1409,25 +1324,20 @@ size_t iommu_pgsize(unsigned long pgsize_bitmap,
 int iommu_map(struct iommu_domain *domain, unsigned long iova,
 	      phys_addr_t paddr, size_t size, int prot)
 {
-	unsigned long orig_iova = iova, pgsize_bitmap;
+	unsigned long orig_iova = iova;
 	unsigned int min_pagesz;
 	size_t orig_size = size;
 	int ret = 0;
 
-//	trace_map_start(iova, paddr, size);
 	if (unlikely(domain->ops->map == NULL ||
-		     (domain->ops->pgsize_bitmap == 0UL &&
-		      !domain->ops->get_pgsize_bitmap))) {
-//		trace_map_end(iova, paddr, size);
+		     domain->ops->pgsize_bitmap == 0UL))
 		return -ENODEV;
-	}
 
 	if (unlikely(!(domain->type & __IOMMU_DOMAIN_PAGING)))
 		return -EINVAL;
 
-	pgsize_bitmap = iommu_get_pgsize_bitmap(domain);
 	/* find out the minimum page size supported */
-	min_pagesz = 1 << __ffs(pgsize_bitmap);
+	min_pagesz = 1 << __ffs(domain->ops->pgsize_bitmap);
 
 	/*
 	 * both the virtual address and the physical one, as well as
@@ -1437,14 +1347,13 @@ int iommu_map(struct iommu_domain *domain, unsigned long iova,
 	if (!IS_ALIGNED(iova | paddr | size, min_pagesz)) {
 		pr_err("unaligned: iova 0x%lx pa %pa size 0x%zx min_pagesz 0x%x\n",
 		       iova, &paddr, size, min_pagesz);
-//		trace_map_end(iova, paddr, size);
 		return -EINVAL;
 	}
 
 	pr_debug("map: iova 0x%lx pa %pa size 0x%zx\n", iova, &paddr, size);
 
 	while (size) {
-		size_t pgsize = iommu_pgsize(pgsize_bitmap, iova | paddr, size);
+		size_t pgsize = iommu_pgsize(domain, iova | paddr, size);
 
 		pr_debug("mapping: iova 0x%lx pa %pa pgsize 0x%zx\n",
 			 iova, &paddr, pgsize);
@@ -1461,38 +1370,28 @@ int iommu_map(struct iommu_domain *domain, unsigned long iova,
 	/* unroll mapping in case something went wrong */
 	if (ret)
 		iommu_unmap(domain, orig_iova, orig_size - size);
-//	else
-//		trace_map(orig_iova, paddr, orig_size);
+	else
+		trace_map(orig_iova, paddr, orig_size);
 
-//	trace_map_end(iova, paddr, size);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(iommu_map);
 
-static size_t __iommu_unmap(struct iommu_domain *domain,
-			    unsigned long iova, size_t size,
-			    bool sync)
+size_t iommu_unmap(struct iommu_domain *domain, unsigned long iova, size_t size)
 {
-	const struct iommu_ops *ops = domain->ops;
 	size_t unmapped_page, unmapped = 0;
-//	unsigned long orig_iova = iova;
-        unsigned int min_pagesz;
+	unsigned int min_pagesz;
+	unsigned long orig_iova = iova;
 
-//	trace_unmap_start(iova, 0, size);
-	if (unlikely(ops->unmap == NULL ||
-		     (ops->pgsize_bitmap == 0UL &&
-		      !ops->get_pgsize_bitmap))) {
-//		trace_unmap_end(iova, 0, size);
+	if (unlikely(domain->ops->unmap == NULL ||
+		     domain->ops->pgsize_bitmap == 0UL))
 		return -ENODEV;
-	}
 
-	if (unlikely(!(domain->type & __IOMMU_DOMAIN_PAGING))) {
-//		trace_unmap_end(iova, 0, size);
+	if (unlikely(!(domain->type & __IOMMU_DOMAIN_PAGING)))
 		return -EINVAL;
-	}
 
 	/* find out the minimum page size supported */
-	min_pagesz = 1 << __ffs(iommu_get_pgsize_bitmap(domain));
+	min_pagesz = 1 << __ffs(domain->ops->pgsize_bitmap);
 
 	/*
 	 * The virtual address, as well as the size of the mapping, must be
@@ -1502,7 +1401,6 @@ static size_t __iommu_unmap(struct iommu_domain *domain,
 	if (!IS_ALIGNED(iova | size, min_pagesz)) {
 		pr_err("unaligned: iova 0x%lx size 0x%zx min_pagesz 0x%x\n",
 		       iova, size, min_pagesz);
-//		trace_unmap_end(iova, 0, size);
 		return -EINVAL;
 	}
 
@@ -1513,14 +1411,11 @@ static size_t __iommu_unmap(struct iommu_domain *domain,
 	 * or we hit an area that isn't mapped.
 	 */
 	while (unmapped < size) {
-		size_t left = size - unmapped;
+		size_t pgsize = iommu_pgsize(domain, iova, size - unmapped);
 
-		unmapped_page = ops->unmap(domain, iova, left);
+		unmapped_page = domain->ops->unmap(domain, iova, pgsize);
 		if (!unmapped_page)
 			break;
-
-		if (sync && ops->iotlb_range_add)
-			ops->iotlb_range_add(domain, iova, left);
 
 		pr_debug("unmapped: iova 0x%lx size 0x%zx\n",
 			 iova, unmapped_page);
@@ -1529,27 +1424,10 @@ static size_t __iommu_unmap(struct iommu_domain *domain,
 		unmapped += unmapped_page;
 	}
 
-	if (sync && ops->iotlb_sync)
-		ops->iotlb_sync(domain);
-
-//	trace_unmap(orig_iova, size, unmapped);
-//	trace_unmap_end(orig_iova, 0, size);
+	trace_unmap(orig_iova, size, unmapped);
 	return unmapped;
 }
-
-size_t iommu_unmap(struct iommu_domain *domain,
-		   unsigned long iova, size_t size)
-{
-	return __iommu_unmap(domain, iova, size, true);
-}
 EXPORT_SYMBOL_GPL(iommu_unmap);
-
-size_t iommu_unmap_fast(struct iommu_domain *domain,
-			unsigned long iova, size_t size)
-{
-	return __iommu_unmap(domain, iova, size, false);
-}
-EXPORT_SYMBOL_GPL(iommu_unmap_fast);
 
 size_t default_iommu_map_sg(struct iommu_domain *domain, unsigned long iova,
 			 struct scatterlist *sg, unsigned int nents, int prot)
@@ -1558,14 +1436,11 @@ size_t default_iommu_map_sg(struct iommu_domain *domain, unsigned long iova,
 	size_t mapped = 0;
 	unsigned int i, min_pagesz;
 	int ret;
-	unsigned long pgsize_bitmap;
 
-	if (unlikely(domain->ops->pgsize_bitmap == 0UL &&
-		     !domain->ops->get_pgsize_bitmap))
+	if (unlikely(domain->ops->pgsize_bitmap == 0UL))
 		return 0;
 
-	pgsize_bitmap = iommu_get_pgsize_bitmap(domain);
-	min_pagesz = 1 << __ffs(pgsize_bitmap);
+	min_pagesz = 1 << __ffs(domain->ops->pgsize_bitmap);
 
 	for_each_sg(sg, s, nents, i) {
 		phys_addr_t phys = page_to_phys(sg_page(s)) + s->offset;
@@ -1597,20 +1472,6 @@ out_err:
 }
 EXPORT_SYMBOL_GPL(default_iommu_map_sg);
 
-/* DEPRECATED */
-int iommu_map_range(struct iommu_domain *domain, unsigned int iova,
-		    struct scatterlist *sg, unsigned int len, int opt)
-{
-	return -ENODEV;
-}
-
-/* DEPRECATED */
-int iommu_unmap_range(struct iommu_domain *domain, unsigned int iova,
-		      unsigned int len)
-{
-	return -ENODEV;
-}
-
 int iommu_domain_window_enable(struct iommu_domain *domain, u32 wnd_nr,
 			       phys_addr_t paddr, u64 size, int prot)
 {
@@ -1631,8 +1492,6 @@ void iommu_domain_window_disable(struct iommu_domain *domain, u32 wnd_nr)
 }
 EXPORT_SYMBOL_GPL(iommu_domain_window_disable);
 
-struct dentry *iommu_debugfs_top;
-
 static int __init iommu_init(void)
 {
 	iommu_group_kset = kset_create_and_add("iommu_groups",
@@ -1641,12 +1500,6 @@ static int __init iommu_init(void)
 	mutex_init(&iommu_group_mutex);
 
 	BUG_ON(!iommu_group_kset);
-
-	iommu_debugfs_top = debugfs_create_dir("iommu", NULL);
-	if (!iommu_debugfs_top) {
-		pr_err("Couldn't create iommu debugfs directory\n");
-		return -ENODEV;
-	}
 
 	return 0;
 }
@@ -1668,7 +1521,7 @@ int iommu_domain_get_attr(struct iommu_domain *domain,
 		break;
 	case DOMAIN_ATTR_PAGING:
 		paging  = data;
-		*paging = (iommu_get_pgsize_bitmap(domain) != 0UL);
+		*paging = (domain->ops->pgsize_bitmap != 0UL);
 		break;
 	case DOMAIN_ATTR_WINDOWS:
 		count = data;
@@ -1716,14 +1569,6 @@ int iommu_domain_set_attr(struct iommu_domain *domain,
 	return ret;
 }
 EXPORT_SYMBOL_GPL(iommu_domain_set_attr);
-
-int iommu_dma_supported(struct iommu_domain *domain, struct device *dev,
-								u64 mask)
-{
-	if (domain->ops->dma_supported)
-		return domain->ops->dma_supported(domain, dev, mask);
-	return 0;
-}
 
 void iommu_get_dm_regions(struct device *dev, struct list_head *list)
 {

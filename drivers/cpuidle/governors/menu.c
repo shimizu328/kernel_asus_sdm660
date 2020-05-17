@@ -119,6 +119,7 @@
  */
 
 struct menu_device {
+	int		last_state_idx;
 	int             needs_update;
 
 	unsigned int	next_timer_us;
@@ -177,12 +178,7 @@ static inline int performance_multiplier(unsigned long nr_iowaiters, unsigned lo
 
 	/* for higher loadavg, we are more reluctant */
 
-	/*
-	 * this doesn't work as intended - it is almost always 0, but can
-	 * sometimes, depending on workload, spike very high into the hundreds
-	 * even when the average cpu load is under 10%.
-	 */
-	/* mult += 2 * get_loadavg(); */
+	mult += 2 * get_loadavg(load);
 
 	/* for IO wait tasks (per cpu!) we add 5x each */
 	mult += 10 * nr_iowaiters;
@@ -298,7 +294,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 		data->needs_update = 0;
 	}
 
-	dev->last_state_idx = CPUIDLE_DRIVER_STATE_START - 1;
+	data->last_state_idx = CPUIDLE_DRIVER_STATE_START - 1;
 
 	/* Special case when user has set very strict latency requirement */
 	if (unlikely(latency_req == 0))
@@ -337,7 +333,7 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 	if (data->next_timer_us > 5 &&
 	    !drv->states[CPUIDLE_DRIVER_STATE_START].disabled &&
 		dev->states_usage[CPUIDLE_DRIVER_STATE_START].disable == 0)
-		dev->last_state_idx = CPUIDLE_DRIVER_STATE_START;
+		data->last_state_idx = CPUIDLE_DRIVER_STATE_START;
 
 	/*
 	 * Find the idle state with the lowest power while satisfying
@@ -354,10 +350,10 @@ static int menu_select(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 		if (s->exit_latency > latency_req)
 			continue;
 
-		dev->last_state_idx = i;
+		data->last_state_idx = i;
 	}
 
-	return dev->last_state_idx;
+	return data->last_state_idx;
 }
 
 /**
@@ -372,7 +368,7 @@ static void menu_reflect(struct cpuidle_device *dev, int index)
 {
 	struct menu_device *data = this_cpu_ptr(&menu_devices);
 
-	dev->last_state_idx = index;
+	data->last_state_idx = index;
 	data->needs_update = 1;
 }
 
@@ -384,7 +380,7 @@ static void menu_reflect(struct cpuidle_device *dev, int index)
 static void menu_update(struct cpuidle_driver *drv, struct cpuidle_device *dev)
 {
 	struct menu_device *data = this_cpu_ptr(&menu_devices);
-	int last_idx = dev->last_state_idx;
+	int last_idx = data->last_state_idx;
 	struct cpuidle_state *target = &drv->states[last_idx];
 	unsigned int measured_us;
 	unsigned int new_factor;

@@ -71,9 +71,9 @@ static long __estimate_accuracy(struct timespec *tv)
 	return slack;
 }
 
-u64 select_estimate_accuracy(struct timespec *tv)
+long select_estimate_accuracy(struct timespec *tv)
 {
-	u64 ret;
+	unsigned long ret;
 	struct timespec now;
 
 	/*
@@ -239,8 +239,7 @@ int poll_schedule_timeout(struct poll_wqueues *pwq, int state,
 
 	set_current_state(state);
 	if (!pwq->triggered)
-		rc = freezable_schedule_hrtimeout_range(expires, slack,
-							HRTIMER_MODE_ABS);
+		rc = schedule_hrtimeout_range(expires, slack, HRTIMER_MODE_ABS);
 	__set_current_state(TASK_RUNNING);
 
 	/*
@@ -404,7 +403,7 @@ int do_select(int n, fd_set_bits *fds, struct timespec *end_time)
 	struct poll_wqueues table;
 	poll_table *wait;
 	int retval, i, timed_out = 0;
-	u64 slack = 0;
+	unsigned long slack = 0;
 	unsigned int busy_flag = net_busy_loop_on() ? POLL_BUSY_LOOP : 0;
 	unsigned long busy_end = 0;
 
@@ -793,7 +792,7 @@ static int do_poll(unsigned int nfds,  struct poll_list *list,
 	poll_table* pt = &wait->pt;
 	ktime_t expire, *to = NULL;
 	int timed_out = 0, count = 0;
-	u64 slack = 0;
+	unsigned long slack = 0;
 	unsigned int busy_flag = net_busy_loop_on() ? POLL_BUSY_LOOP : 0;
 	unsigned long busy_end = 0;
 

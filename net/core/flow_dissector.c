@@ -6,7 +6,6 @@
 #include <linux/if_vlan.h>
 #include <net/ip.h>
 #include <net/ipv6.h>
-#include <net/rmnet_config.h>
 #include <linux/igmp.h>
 #include <linux/icmp.h>
 #include <linux/sctp.h>
@@ -19,7 +18,6 @@
 #include <linux/mpls.h>
 #include <net/flow_dissector.h>
 #include <scsi/fc/fc_fcoe.h>
-#include <linux/net_map.h>
 
 static bool dissector_uses_key(const struct flow_dissector *flow_dissector,
 			       enum flow_dissector_key_id key_id)
@@ -180,15 +178,16 @@ ip:
 
 		ip_proto = iph->protocol;
 
-		if (!dissector_uses_key(flow_dissector,
-					FLOW_DISSECTOR_KEY_IPV4_ADDRS))
-			break;
+		if (dissector_uses_key(flow_dissector,
+				       FLOW_DISSECTOR_KEY_IPV4_ADDRS)) {
+			key_addrs = skb_flow_dissector_target(flow_dissector,
+							      FLOW_DISSECTOR_KEY_IPV4_ADDRS,
+							      target_container);
 
-		key_addrs = skb_flow_dissector_target(flow_dissector,
-			      FLOW_DISSECTOR_KEY_IPV4_ADDRS, target_container);
-		memcpy(&key_addrs->v4addrs, &iph->saddr,
-		       sizeof(key_addrs->v4addrs));
-		key_control->addr_type = FLOW_DISSECTOR_KEY_IPV4_ADDRS;
+			memcpy(&key_addrs->v4addrs, &iph->saddr,
+			       sizeof(key_addrs->v4addrs));
+			key_control->addr_type = FLOW_DISSECTOR_KEY_IPV4_ADDRS;
+		}
 
 		if (ip_is_fragment(iph)) {
 			key_control->flags |= FLOW_DIS_IS_FRAGMENT;
@@ -340,40 +339,6 @@ mpls:
 		goto out_good;
 	}
 
-	case __constant_htons(ETH_P_MAP): {
-		struct {
-			struct rmnet_map_header_s map;
-			uint8_t proto;
-		} *map, _map;
-		unsigned int maplen;
-
-		map = skb_header_pointer(skb, nhoff, sizeof(_map), &_map);
-		if (!map)
-			return false;
-
-		/* Is MAP command? */
-		if (map->map.cd_bit)
-			return false;
-
-		/* Is aggregated frame? */
-		maplen = ntohs(map->map.pkt_len);
-		maplen += map->map.pad_len;
-		maplen += sizeof(struct rmnet_map_header_s);
-		if (maplen < skb->len)
-			return false;
-
-		nhoff += sizeof(struct rmnet_map_header_s);
-		switch (map->proto & RMNET_IP_VER_MASK) {
-		case RMNET_IPV4:
-			proto = htons(ETH_P_IP);
-			goto ip;
-		case RMNET_IPV6:
-			proto = htons(ETH_P_IPV6);
-			goto ipv6;
-		default:
-			return false;
-		}
-	}
 	case htons(ETH_P_FCOE):
 		key_control->thoff = (u16)(nhoff + FCOE_HEADER_LEN);
 		/* fall through */

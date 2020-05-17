@@ -608,7 +608,7 @@ int dequeue_signal(struct task_struct *tsk, sigset_t *mask, siginfo_t *info)
 			struct hrtimer *tmr = &tsk->signal->real_timer;
 
 			if (!hrtimer_is_queued(tmr) &&
-			    tsk->signal->it_real_incr != 0) {
+			    tsk->signal->it_real_incr.tv64 != 0) {
 				hrtimer_forward(tmr, tmr->base->get_time(),
 						tsk->signal->it_real_incr);
 				hrtimer_restart(tmr);
@@ -1660,7 +1660,7 @@ bool do_notify_parent(struct task_struct *tsk, int sig)
 		 * This is only possible if parent == real_parent.
 		 * Check if it has changed security domain.
 		 */
-		if (tsk->parent_exec_id != tsk->parent->self_exec_id)
+		if (tsk->parent_exec_id != READ_ONCE(tsk->parent->self_exec_id))
 			sig = SIGCHLD;
 	}
 
@@ -2299,7 +2299,7 @@ relock:
 		ka = &sighand->action[signr-1];
 
 		/* Trace actually delivered signals. */
-//		trace_signal_deliver(signr, &ksig->info, ka);
+		trace_signal_deliver(signr, &ksig->info, ka);
 
 		if (ka->sa.sa_handler == SIG_IGN) /* Do nothing.  */
 			continue;

@@ -37,23 +37,6 @@ struct task_struct *kthread_create_on_cpu(int (*threadfn)(void *data),
 	__k;								   \
 })
 
-/**
- * kthread_run_perf_critical - create and wake a performance-critical thread.
- *
- * Same as kthread_create().
- */
-#define kthread_run_perf_critical(threadfn, data, namefmt, ...)		   \
-({									   \
-	struct task_struct *__k						   \
-		= kthread_create(threadfn, data, namefmt, ## __VA_ARGS__); \
-	if (!IS_ERR(__k)) {						   \
-		__k->flags |= PF_PERF_CRITICAL;				   \
-		kthread_bind_mask(__k, cpu_perf_mask);			   \
-		wake_up_process(__k);					   \
-	}								   \
-	__k;								   \
-})
-
 void kthread_bind(struct task_struct *k, unsigned int cpu);
 void kthread_bind_mask(struct task_struct *k, const struct cpumask *mask);
 int kthread_stop(struct task_struct *k);
@@ -92,8 +75,6 @@ struct kthread_work {
 	struct list_head	node;
 	kthread_work_func_t	func;
 	struct kthread_worker	*worker;
-	/* Number of canceling calls that are running at the moment. */
-	int			canceling;
 };
 
 #define KTHREAD_WORKER_INIT(worker)	{				\
@@ -147,7 +128,5 @@ bool queue_kthread_work(struct kthread_worker *worker,
 			struct kthread_work *work);
 void flush_kthread_work(struct kthread_work *work);
 void flush_kthread_worker(struct kthread_worker *worker);
-
-bool kthread_cancel_work_sync(struct kthread_work *work);
 
 #endif /* _LINUX_KTHREAD_H */

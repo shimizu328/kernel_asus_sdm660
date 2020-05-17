@@ -76,7 +76,7 @@ int usb_gadget_map_request(struct usb_gadget *gadget,
 		}
 
 		req->num_mapped_sgs = mapped;
-	} else if (!req->dma_pre_mapped) {
+	} else {
 		req->dma = dma_map_single(dev, req->buf, req->length,
 				is_in ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
@@ -97,19 +97,13 @@ void usb_gadget_unmap_request(struct usb_gadget *gadget,
 		return;
 
 	if (req->num_mapped_sgs) {
-		dma_unmap_sg(gadget->dev.parent, req->sg, req->num_mapped_sgs,
+		dma_unmap_sg(gadget->dev.parent, req->sg, req->num_sgs,
 				is_in ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
 		req->num_mapped_sgs = 0;
-	} else if (!req->dma_pre_mapped && req->dma != DMA_ERROR_CODE) {
-		/*
-		 * If the DMA address has not been mapped by a higher layer,
-		 * then unmap it here. Otherwise, the DMA address will be
-		 * unmapped by the upper layer (where the request was queued).
-		 */
+	} else {
 		dma_unmap_single(gadget->dev.parent, req->dma, req->length,
 				is_in ? DMA_TO_DEVICE : DMA_FROM_DEVICE);
-		req->dma = DMA_ERROR_CODE;
 	}
 }
 EXPORT_SYMBOL_GPL(usb_gadget_unmap_request);

@@ -263,7 +263,6 @@ static int __init aio_setup(void)
 	aio_mnt = kern_mount(&aio_fs);
 	if (IS_ERR(aio_mnt))
 		panic("Failed to create aio fs mount.");
-	aio_mnt->mnt_flags |= MNT_NOEXEC;
 
 	kiocb_cachep = KMEM_CACHE(aio_kiocb, SLAB_HWCACHE_ALIGN|SLAB_PANIC);
 	kioctx_cachep = KMEM_CACHE(kioctx,SLAB_HWCACHE_ALIGN|SLAB_PANIC);
@@ -372,14 +371,6 @@ static int aio_migratepage(struct address_space *mapping, struct page *new,
 	unsigned long flags;
 	pgoff_t idx;
 	int rc;
-
-	/*
-	 * We cannot support the _NO_COPY case here, because copy needs to
-	 * happen under the ctx->completion_lock. That does not work with the
-	 * migration workflow of MIGRATE_SYNC_NO_COPY.
-	 */
-	if (mode == MIGRATE_SYNC_NO_COPY)
-		return -EINVAL;
 
 	rc = 0;
 
@@ -1292,7 +1283,7 @@ static long read_events(struct kioctx *ctx, long min_nr, long nr,
 			struct io_event __user *event,
 			struct timespec __user *timeout)
 {
-	ktime_t until = KTIME_MAX;
+	ktime_t until = { .tv64 = KTIME_MAX };
 	long ret = 0;
 
 	if (timeout) {
@@ -1318,7 +1309,7 @@ static long read_events(struct kioctx *ctx, long min_nr, long nr,
 	 * the ringbuffer empty. So in practice we should be ok, but it's
 	 * something to be aware of when touching this code.
 	 */
-	if (until == 0)
+	if (until.tv64 == 0)
 		aio_read_events(ctx, min_nr, nr, event, &ret);
 	else
 		wait_event_interruptible_hrtimeout(ctx->wait,
@@ -1347,7 +1338,7 @@ static long read_events(struct kioctx *ctx, long min_nr, long nr,
 SYSCALL_DEFINE2(io_setup, unsigned, nr_events, aio_context_t __user *, ctxp)
 {
 	struct kioctx *ioctx = NULL;
-	unsigned long ctx = 0;
+	unsigned long ctx;
 	long ret;
 
 	ret = get_user(ctx, ctxp);
@@ -1480,7 +1471,6 @@ rw_common:
 
 		len = ret;
 
-		get_file(file);
 		if (rw == WRITE)
 			file_start_write(file);
 
@@ -1488,7 +1478,6 @@ rw_common:
 
 		if (rw == WRITE)
 			file_end_write(file);
-		fput(file);
 		kfree(iovec);
 		break;
 

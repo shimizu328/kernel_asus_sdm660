@@ -783,7 +783,7 @@ static int get_futex_value_locked(u32 *dest, u32 __user *from)
 	int ret;
 
 	pagefault_disable();
-	ret = __get_user(*dest, from);
+	ret = __copy_from_user_inatomic(dest, from, sizeof(u32));
 	pagefault_enable();
 
 	return ret ? -EFAULT : 0;
@@ -1479,8 +1479,16 @@ static int futex_atomic_op_inuser(unsigned int encoded_op, u32 __user *uaddr)
 	int oldval, ret;
 
 	if (encoded_op & (FUTEX_OP_OPARG_SHIFT << 28)) {
-		if (oparg < 0 || oparg > 31)
-			return -EINVAL;
+		if (oparg < 0 || oparg > 31) {
+			char comm[sizeof(current->comm)];
+			/*
+			 * kill this print and return -EINVAL when userspace
+			 * is sane again
+			 */
+			pr_info_ratelimited("futex_wake_op: %s tries to shift op by %d; fix this program\n",
+					get_task_comm(comm, current), oparg);
+			oparg &= 31;
+		}
 		oparg = 1 << oparg;
 	}
 
@@ -2484,7 +2492,7 @@ retry:
 	restart->fn = futex_wait_restart;
 	restart->futex.uaddr = uaddr;
 	restart->futex.val = val;
-	restart->futex.time = *abs_time;
+	restart->futex.time = abs_time->tv64;
 	restart->futex.bitset = bitset;
 	restart->futex.flags = flags | FLAGS_HAS_TIMEOUT;
 
@@ -2505,7 +2513,7 @@ static long futex_wait_restart(struct restart_block *restart)
 	ktime_t t, *tp = NULL;
 
 	if (restart->futex.flags & FLAGS_HAS_TIMEOUT) {
-		t = restart->futex.time;
+		t.tv64 = restart->futex.time;
 		tp = &t;
 	}
 	restart->fn = do_no_restart_syscall;

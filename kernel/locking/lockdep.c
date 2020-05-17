@@ -1265,9 +1265,11 @@ unsigned long lockdep_count_forward_deps(struct lock_class *class)
 	this.class = class;
 
 	raw_local_irq_save(flags);
+	current->lockdep_recursion = 1;
 	arch_spin_lock(&lockdep_lock);
 	ret = __lockdep_count_forward_deps(&this);
 	arch_spin_unlock(&lockdep_lock);
+	current->lockdep_recursion = 0;
 	raw_local_irq_restore(flags);
 
 	return ret;
@@ -1292,9 +1294,11 @@ unsigned long lockdep_count_backward_deps(struct lock_class *class)
 	this.class = class;
 
 	raw_local_irq_save(flags);
+	current->lockdep_recursion = 1;
 	arch_spin_lock(&lockdep_lock);
 	ret = __lockdep_count_backward_deps(&this);
 	arch_spin_unlock(&lockdep_lock);
+	current->lockdep_recursion = 0;
 	raw_local_irq_restore(flags);
 
 	return ret;
@@ -3591,7 +3595,7 @@ void lock_acquire(struct lockdep_map *lock, unsigned int subclass,
 	check_flags(flags);
 
 	current->lockdep_recursion = 1;
-//	trace_lock_acquire(lock, subclass, trylock, read, check, nest_lock, ip);
+	trace_lock_acquire(lock, subclass, trylock, read, check, nest_lock, ip);
 	__lock_acquire(lock, subclass, trylock, read, check,
 		       irqs_disabled_flags(flags), nest_lock, ip, 0, 0);
 	current->lockdep_recursion = 0;
@@ -3610,7 +3614,7 @@ void lock_release(struct lockdep_map *lock, int nested,
 	raw_local_irq_save(flags);
 	check_flags(flags);
 	current->lockdep_recursion = 1;
-//	trace_lock_release(lock, ip);
+	trace_lock_release(lock, ip);
 	if (__lock_release(lock, nested, ip))
 		check_chain_key(current);
 	current->lockdep_recursion = 0;
@@ -3808,7 +3812,7 @@ found_it:
 		hlock->holdtime_stamp = now;
 	}
 
-//	trace_lock_acquired(lock, ip);
+	trace_lock_acquired(lock, ip);
 
 	stats = get_lock_stats(hlock_class(hlock));
 	if (waittime) {
@@ -3838,7 +3842,7 @@ void lock_contended(struct lockdep_map *lock, unsigned long ip)
 	raw_local_irq_save(flags);
 	check_flags(flags);
 	current->lockdep_recursion = 1;
-//	trace_lock_contended(lock, ip);
+	trace_lock_contended(lock, ip);
 	__lock_contended(lock, ip);
 	current->lockdep_recursion = 0;
 	raw_local_irq_restore(flags);

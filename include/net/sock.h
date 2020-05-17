@@ -274,7 +274,6 @@ struct cg_proto;
   *	@sk_gso_type: GSO type (e.g. %SKB_GSO_TCPV4)
   *	@sk_gso_max_size: Maximum GSO segment size to build
   *	@sk_gso_max_segs: Maximum number of GSO segments
-  *	@sk_pacing_shift: scaling factor for TCP Small Queues
   *	@sk_lingertime: %SO_LINGER l_linger setting
   *	@sk_backlog: always used with the per-socket spinlock held
   *	@sk_callback_lock: used with the callbacks in the end of this struct
@@ -418,7 +417,6 @@ struct sock {
 	unsigned int		sk_gso_max_size;
 	u16			sk_gso_max_segs;
 	int			sk_rcvlowat;
-	u8			sk_pacing_shift;
 	unsigned long	        sk_lingertime;
 	struct sk_buff_head	sk_error_queue;
 	struct proto		*sk_prot_creator;
@@ -452,7 +450,6 @@ struct sock {
 	void			*sk_security;
 #endif
 	__u32			sk_mark;
-	kuid_t			sk_uid;
 #ifdef CONFIG_CGROUP_NET_CLASSID
 	u32			sk_classid;
 #endif
@@ -464,7 +461,6 @@ struct sock {
 	int			(*sk_backlog_rcv)(struct sock *sk,
 						  struct sk_buff *skb);
 	void                    (*sk_destruct)(struct sock *sk);
-	struct rcu_head		sk_rcu;
 };
 
 #define __sk_user_data(sk) ((*((void __rcu **)&(sk)->sk_user_data)))
@@ -753,7 +749,6 @@ enum sock_flags {
 		     */
 	SOCK_FILTER_LOCKED, /* Filter cannot be changed anymore */
 	SOCK_SELECT_ERR_QUEUE, /* Wake select on error queue */
-	SOCK_RCU_FREE, /* wait rcu grace period in sk_destruct() */
 };
 
 #define SK_FLAGS_TIMESTAMP ((1UL << SOCK_TIMESTAMP) | (1UL << SOCK_TIMESTAMPING_RX_SOFTWARE))
@@ -1042,12 +1037,8 @@ struct proto {
 	 */
 	int			*memory_pressure;
 	long			*sysctl_mem;
-
 	int			*sysctl_wmem;
 	int			*sysctl_rmem;
-	u32			sysctl_wmem_offset;
-	u32			sysctl_rmem_offset;
-
 	int			max_header;
 	bool			no_autobind;
 
@@ -1086,7 +1077,6 @@ struct proto {
 	void			(*destroy_cgroup)(struct mem_cgroup *memcg);
 	struct cg_proto		*(*proto_cgroup)(struct mem_cgroup *memcg);
 #endif
-	int			(*diag_destroy)(struct sock *sk, int err);
 };
 
 int proto_register(struct proto *prot, int alloc_slab);
@@ -1214,11 +1204,13 @@ static inline void memcg_memory_allocated_add(struct cg_proto *prot,
 					      unsigned long amt,
 					      int *parent_status)
 {
-	page_counter_charge(&prot->memory_allocated, amt);
+	struct page_counter *counter;
 
-	if (page_counter_read(&prot->memory_allocated) >
-	    prot->memory_allocated.limit)
-		*parent_status = OVER_LIMIT;
+	if (page_counter_try_charge(&prot->memory_allocated, amt, &counter))
+		return;
+
+	page_counter_charge(&prot->memory_allocated, amt);
+	*parent_status = OVER_LIMIT;
 }
 
 static inline void memcg_memory_allocated_sub(struct cg_proto *prot,
@@ -1478,18 +1470,7 @@ static inline void sk_wmem_free_skb(struct sock *sk, struct sk_buff *skb)
  * Since ~2.3.5 it is also exclusive sleep lock serializing
  * accesses from user process context.
  */
-static inline void sock_owned_by_me(const struct sock *sk)
-{
-#ifdef CONFIG_LOCKDEP
-	WARN_ON_ONCE(!lockdep_sock_is_held(sk) && debug_locks);
-#endif
-}
-
-static inline bool sock_owned_by_user(const struct sock *sk)
-{
-	sock_owned_by_me(sk);
-	return sk->sk_lock.owned;
-}
+#define sock_owned_by_user(sk)	((sk)->sk_lock.owned)
 
 static inline void sock_release_ownership(struct sock *sk)
 {
@@ -1672,7 +1653,13 @@ static inline void sock_put(struct sock *sk)
  */
 void sock_gen_put(struct sock *sk);
 
-int sk_receive_skb(struct sock *sk, struct sk_buff *skb, const int nested);
+int __sk_receive_skb(struct sock *sk, struct sk_buff *skb, const int nested,
+		     unsigned int trim_cap);
+static inline int sk_receive_skb(struct sock *sk, struct sk_buff *skb,
+				 const int nested)
+{
+	return __sk_receive_skb(sk, skb, nested, 1);
+}
 
 static inline void sk_tx_queue_set(struct sock *sk, int tx_queue)
 {
@@ -1722,18 +1709,12 @@ static inline void sock_graft(struct sock *sk, struct socket *parent)
 	sk->sk_wq = parent->wq;
 	parent->sk = sk;
 	sk_set_socket(sk, parent);
-	sk->sk_uid = SOCK_INODE(parent)->i_uid;
 	security_sock_graft(sk, parent);
 	write_unlock_bh(&sk->sk_callback_lock);
 }
 
 kuid_t sock_i_uid(struct sock *sk);
 unsigned long sock_i_ino(struct sock *sk);
-
-static inline kuid_t sock_net_uid(const struct net *net, const struct sock *sk)
-{
-	return sk ? sk->sk_uid : make_kuid(net->user_ns, 0);
-}
 
 static inline u32 net_tx_rndhash(void)
 {
@@ -2235,8 +2216,8 @@ sock_recv_timestamp(struct msghdr *msg, struct sock *sk, struct sk_buff *skb)
 	 */
 	if (sock_flag(sk, SOCK_RCVTSTAMP) ||
 	    (sk->sk_tsflags & SOF_TIMESTAMPING_RX_SOFTWARE) ||
-	    (kt && sk->sk_tsflags & SOF_TIMESTAMPING_SOFTWARE) ||
-	    (hwtstamps->hwtstamp &&
+	    (kt.tv64 && sk->sk_tsflags & SOF_TIMESTAMPING_SOFTWARE) ||
+	    (hwtstamps->hwtstamp.tv64 &&
 	     (sk->sk_tsflags & SOF_TIMESTAMPING_RAW_HARDWARE)))
 		__sock_recv_timestamp(msg, sk, skb);
 	else
@@ -2378,45 +2359,5 @@ extern int sysctl_optmem_max;
 
 extern __u32 sysctl_wmem_default;
 extern __u32 sysctl_rmem_default;
-
-static inline int sk_get_wmem0(const struct sock *sk, const struct proto *proto)
-{
-	/* Does this proto have per netns sysctl_wmem ? */
-	if (proto->sysctl_wmem_offset)
-		return *(int *)((void *)sock_net(sk) + proto->sysctl_wmem_offset);
-
-	return *proto->sysctl_wmem;
-}
-
-static inline int sk_get_rmem0(const struct sock *sk, const struct proto *proto)
-{
-	/* Does this proto have per netns sysctl_rmem ? */
-	if (proto->sysctl_rmem_offset)
-		return *(int *)((void *)sock_net(sk) + proto->sysctl_rmem_offset);
-
-	return *proto->sysctl_rmem;
-}
-
-/* Default TCP Small queue budget is ~1 ms of data (1sec >> 10)
- * Some wifi drivers need to tweak it to get more chunks.
- * They can use this helper from their ndo_start_xmit()
- */
-static inline void sk_pacing_shift_update(struct sock *sk, int val)
-{
-	if (!sk || !sk_fullsock(sk) || sk->sk_pacing_shift == val)
-		return;
-	sk->sk_pacing_shift = val;
-}
-
-/* SOCKEV Notifier Events */
-#define SOCKEV_SOCKET   0x00
-#define SOCKEV_BIND     0x01
-#define SOCKEV_LISTEN   0x02
-#define SOCKEV_ACCEPT   0x03
-#define SOCKEV_CONNECT  0x04
-#define SOCKEV_SHUTDOWN 0x05
-
-int sockev_register_notify(struct notifier_block *nb);
-int sockev_unregister_notify(struct notifier_block *nb);
 
 #endif	/* _SOCK_H */

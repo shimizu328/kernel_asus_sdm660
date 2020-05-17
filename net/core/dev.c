@@ -137,8 +137,6 @@
 #include <linux/errqueue.h>
 #include <linux/hrtimer.h>
 #include <linux/netfilter_ingress.h>
-#include <linux/tcp.h>
-#include <net/tcp.h>
 
 #include "net-sysfs.h"
 
@@ -185,7 +183,7 @@ EXPORT_SYMBOL(dev_base_lock);
 static DEFINE_SPINLOCK(napi_hash_lock);
 
 static unsigned int napi_gen_id = NR_CPUS;
-static DEFINE_READ_MOSTLY_HASHTABLE(napi_hash, 8);
+static DEFINE_HASHTABLE(napi_hash, 8);
 
 static seqcount_t devnet_rename_seq;
 
@@ -1760,14 +1758,14 @@ EXPORT_SYMBOL(net_disable_timestamp);
 
 static inline void net_timestamp_set(struct sk_buff *skb)
 {
-	skb->tstamp = 0;
+	skb->tstamp.tv64 = 0;
 	if (static_key_false(&netstamp_needed))
 		__net_timestamp(skb);
 }
 
 #define net_timestamp_check(COND, SKB)			\
 	if (static_key_false(&netstamp_needed)) {		\
-		if ((COND) && !(SKB)->tstamp)	\
+		if ((COND) && !(SKB)->tstamp.tv64)	\
 			__net_timestamp(SKB);		\
 	}						\
 
@@ -2779,9 +2777,9 @@ static int xmit_one(struct sk_buff *skb, struct net_device *dev,
 		dev_queue_xmit_nit(skb, dev);
 
 	len = skb->len;
-//	trace_net_dev_start_xmit(skb, dev);
+	trace_net_dev_start_xmit(skb, dev);
 	rc = netdev_start_xmit(skb, dev, txq, more);
-//	trace_net_dev_xmit(skb, rc, dev, len);
+	trace_net_dev_xmit(skb, rc, dev, len);
 
 	return rc;
 }
@@ -2838,10 +2836,6 @@ static struct sk_buff *validate_xmit_skb(struct sk_buff *skb, struct net_device 
 	if (netif_needs_gso(skb, features)) {
 		struct sk_buff *segs;
 
-//		__be16 src_port = tcp_hdr(skb)->source;
-//		__be16 dest_port = tcp_hdr(skb)->dest;
-
-//		trace_print_skb_gso(skb, src_port, dest_port);
 		segs = skb_gso_segment(skb, features);
 		if (IS_ERR(segs)) {
 			goto out_kfree_skb;
@@ -2881,7 +2875,7 @@ out_null:
 
 struct sk_buff *validate_xmit_skb_list(struct sk_buff *skb, struct net_device *dev)
 {
-	struct sk_buff *next, *head = NULL, *tail = NULL;
+	struct sk_buff *next, *head = NULL, *tail;
 
 	for (; skb != NULL; skb = next) {
 		next = skb->next;
@@ -3198,7 +3192,7 @@ static int __dev_queue_xmit(struct sk_buff *skb, void *accel_priv)
 #ifdef CONFIG_NET_CLS_ACT
 	skb->tc_verd = SET_TC_AT(skb->tc_verd, AT_EGRESS);
 #endif
-//	trace_net_dev_queue(skb);
+	trace_net_dev_queue(skb);
 	if (q->enqueue) {
 		rc = __dev_xmit_skb(skb, q, dev, txq);
 		goto out;
@@ -3619,7 +3613,7 @@ static int netif_rx_internal(struct sk_buff *skb)
 
 	net_timestamp_check(netdev_tstamp_prequeue, skb);
 
-//	trace_netif_rx(skb);
+	trace_netif_rx(skb);
 #ifdef CONFIG_RPS
 	if (static_key_false(&rps_needed)) {
 		struct rps_dev_flow voidflow, *rflow = &voidflow;
@@ -3663,7 +3657,7 @@ static int netif_rx_internal(struct sk_buff *skb)
 
 int netif_rx(struct sk_buff *skb)
 {
-//	trace_netif_rx_entry(skb);
+	trace_netif_rx_entry(skb);
 
 	return netif_rx_internal(skb);
 }
@@ -3673,7 +3667,7 @@ int netif_rx_ni(struct sk_buff *skb)
 {
 	int err;
 
-//	trace_netif_rx_ni_entry(skb);
+	trace_netif_rx_ni_entry(skb);
 
 	preempt_disable();
 	err = netif_rx_internal(skb);
@@ -3702,10 +3696,10 @@ static void net_tx_action(struct softirq_action *h)
 			clist = clist->next;
 
 			WARN_ON(atomic_read(&skb->users));
-//			if (likely(get_kfree_skb_cb(skb)->reason == SKB_REASON_CONSUMED))
-//				trace_consume_skb(skb);
-//			else
-//				trace_kfree_skb(skb, net_tx_action);
+			if (likely(get_kfree_skb_cb(skb)->reason == SKB_REASON_CONSUMED))
+				trace_consume_skb(skb);
+			else
+				trace_kfree_skb(skb, net_tx_action);
 			__kfree_skb(skb);
 		}
 	}
@@ -3918,7 +3912,7 @@ static int __netif_receive_skb_core(struct sk_buff *skb, bool pfmemalloc)
 
 	net_timestamp_check(!netdev_tstamp_prequeue, skb);
 
-//	trace_netif_receive_skb(skb);
+	trace_netif_receive_skb(skb);
 
 	orig_dev = skb->dev;
 
@@ -4129,7 +4123,7 @@ static int netif_receive_skb_internal(struct sk_buff *skb)
  */
 int netif_receive_skb(struct sk_buff *skb)
 {
-//	trace_netif_receive_skb_entry(skb);
+	trace_netif_receive_skb_entry(skb);
 
 	return netif_receive_skb_internal(skb);
 }
@@ -4194,7 +4188,6 @@ static int napi_gro_complete(struct sk_buff *skb)
 	}
 
 out:
-	__this_cpu_add(softnet_data.gro_coalesced, NAPI_GRO_CB(skb)->count > 1);
 	return netif_receive_skb_internal(skb);
 }
 
@@ -4237,7 +4230,6 @@ static void gro_list_prepare(struct napi_struct *napi, struct sk_buff *skb)
 		unsigned long diffs;
 
 		NAPI_GRO_CB(p)->flush = 0;
-		NAPI_GRO_CB(p)->flush_id = 0;
 
 		if (hash != skb_get_hash_raw(p)) {
 			NAPI_GRO_CB(p)->same_flow = 0;
@@ -4328,6 +4320,7 @@ static enum gro_result dev_gro_receive(struct napi_struct *napi, struct sk_buff 
 		NAPI_GRO_CB(skb)->free = 0;
 		NAPI_GRO_CB(skb)->encap_mark = 0;
 		NAPI_GRO_CB(skb)->recursion_counter = 0;
+		NAPI_GRO_CB(skb)->is_fou = 0;
 		NAPI_GRO_CB(skb)->gro_remcsum_start = 0;
 
 		/* Setup for GRO checksum validation */
@@ -4469,7 +4462,7 @@ static gro_result_t napi_skb_finish(gro_result_t ret, struct sk_buff *skb)
 
 gro_result_t napi_gro_receive(struct napi_struct *napi, struct sk_buff *skb)
 {
-//	trace_napi_gro_receive_entry(skb);
+	trace_napi_gro_receive_entry(skb);
 
 	skb_gro_reset_offset(skb);
 
@@ -4589,7 +4582,7 @@ gro_result_t napi_gro_frags(struct napi_struct *napi)
 	if (!skb)
 		return GRO_DROP;
 
-//	trace_napi_gro_frags_entry(skb);
+	trace_napi_gro_frags_entry(skb);
 
 	return napi_frags_finish(napi, skb, dev_gro_receive(napi, skb));
 }
@@ -4620,24 +4613,6 @@ __sum16 __skb_gro_checksum_complete(struct sk_buff *skb)
 }
 EXPORT_SYMBOL(__skb_gro_checksum_complete);
 
-static void net_rps_send_ipi(struct softnet_data *remsd)
-{
-#ifdef CONFIG_RPS
-	while (remsd) {
-		struct softnet_data *next = remsd->rps_ipi_next;
-
-		if (cpu_online(remsd->cpu)) {
-			smp_call_function_single_async(remsd->cpu, &remsd->csd);
-		} else {
-			rps_lock(remsd);
-			remsd->backlog.state = 0;
-			rps_unlock(remsd);
-		}
-		remsd = next;
-	}
-#endif
-}
-
 /*
  * net_rps_action_and_irq_enable sends any pending IPI's for rps.
  * Note: called with local irq disabled, but exits with local irq enabled.
@@ -4653,7 +4628,14 @@ static void net_rps_action_and_irq_enable(struct softnet_data *sd)
 		local_irq_enable();
 
 		/* Send pending IPI's to kick RPS processing on remote cpus. */
-		net_rps_send_ipi(remsd);
+		while (remsd) {
+			struct softnet_data *next = remsd->rps_ipi_next;
+
+			if (cpu_online(remsd->cpu))
+				smp_call_function_single_async(remsd->cpu,
+							   &remsd->csd);
+			remsd = next;
+		}
 	} else
 #endif
 		local_irq_enable();
@@ -4694,7 +4676,8 @@ static int process_backlog(struct napi_struct *napi, int quota)
 			local_irq_disable();
 			input_queue_head_incr(sd);
 			if (++work >= quota) {
-				goto state_changed;
+				local_irq_enable();
+				return work;
 			}
 		}
 
@@ -4711,17 +4694,14 @@ static int process_backlog(struct napi_struct *napi, int quota)
 			napi->state = 0;
 			rps_unlock(sd);
 
-			goto state_changed;
+			break;
 		}
 
 		skb_queue_splice_tail_init(&sd->input_pkt_queue,
 					   &sd->process_queue);
 		rps_unlock(sd);
 	}
-state_changed:
 	local_irq_enable();
-	napi_gro_flush(napi, false);
-	sd->current_napi = NULL;
 
 	return work;
 }
@@ -4757,13 +4737,10 @@ EXPORT_SYMBOL(__napi_schedule_irqoff);
 
 void __napi_complete(struct napi_struct *n)
 {
-	struct softnet_data *sd = this_cpu_ptr(&softnet_data);
-
 	BUG_ON(!test_bit(NAPI_STATE_SCHED, &n->state));
 
 	list_del_init(&n->poll_list);
 	smp_mb__before_atomic();
-	sd->current_napi = NULL;
 	clear_bit(NAPI_STATE_SCHED, &n->state);
 }
 EXPORT_SYMBOL(__napi_complete);
@@ -4913,15 +4890,6 @@ void netif_napi_del(struct napi_struct *napi)
 }
 EXPORT_SYMBOL(netif_napi_del);
 
-
-struct napi_struct *get_current_napi_context(void)
-{
-	struct softnet_data *sd = this_cpu_ptr(&softnet_data);
-
-	return sd->current_napi;
-}
-EXPORT_SYMBOL(get_current_napi_context);
-
 static int napi_poll(struct napi_struct *n, struct list_head *repoll)
 {
 	void *have;
@@ -4941,11 +4909,8 @@ static int napi_poll(struct napi_struct *n, struct list_head *repoll)
 	 */
 	work = 0;
 	if (test_bit(NAPI_STATE_SCHED, &n->state)) {
-		struct softnet_data *sd = this_cpu_ptr(&softnet_data);
-
-		sd->current_napi = n;
 		work = n->poll(n, weight);
-//		trace_napi_poll(n);
+		trace_napi_poll(n);
 	}
 
 	WARN_ON_ONCE(work > weight);
@@ -7570,7 +7535,7 @@ static int dev_cpu_callback(struct notifier_block *nfb,
 	struct sk_buff **list_skb;
 	struct sk_buff *skb;
 	unsigned int cpu, oldcpu = (unsigned long)ocpu;
-	struct softnet_data *sd, *oldsd, *remsd;
+	struct softnet_data *sd, *oldsd;
 
 	if (action != CPU_DEAD && action != CPU_DEAD_FROZEN)
 		return NOTIFY_OK;
@@ -7613,13 +7578,6 @@ static int dev_cpu_callback(struct notifier_block *nfb,
 
 	raise_softirq_irqoff(NET_TX_SOFTIRQ);
 	local_irq_enable();
-
-#ifdef CONFIG_RPS
-	remsd = oldsd->rps_ipi_list;
-	oldsd->rps_ipi_list = NULL;
-#endif
-	/* send out pending IPI's on offline CPU */
-	net_rps_send_ipi(remsd);
 
 	/* Process offline CPU's input_pkt_queue */
 	while ((skb = __skb_dequeue(&oldsd->process_queue))) {

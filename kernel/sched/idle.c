@@ -19,10 +19,9 @@
  * sched_idle_set_state - Record idle state for the current CPU.
  * @idle_state: State to record.
  */
-void sched_idle_set_state(struct cpuidle_state *idle_state, int index)
+void sched_idle_set_state(struct cpuidle_state *idle_state)
 {
 	idle_set_state(this_rq(), idle_state);
-	idle_set_state_idx(this_rq(), index);
 }
 
 static int __read_mostly cpu_idle_force_poll;
@@ -56,14 +55,14 @@ __setup("hlt", cpu_idle_nopoll_setup);
 static inline int cpu_idle_poll(void)
 {
 	rcu_idle_enter();
-//	trace_cpu_idle_rcuidle(0, smp_processor_id());
+	trace_cpu_idle_rcuidle(0, smp_processor_id());
 	local_irq_enable();
 	stop_critical_timings();
 	while (!tif_need_resched() &&
 		(cpu_idle_force_poll || tick_check_broadcast_expired()))
 		cpu_relax();
 	start_critical_timings();
-//	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
+	trace_cpu_idle_rcuidle(PWR_EVENT_EXIT, smp_processor_id());
 	rcu_idle_exit();
 	return 1;
 }
@@ -209,8 +208,6 @@ DEFINE_PER_CPU(bool, cpu_dead_idle);
  */
 static void cpu_idle_loop(void)
 {
-	int cpu = smp_processor_id();
-
 	while (1) {
 		/*
 		 * If the arch has a polling bit, we maintain an invariant:
@@ -229,7 +226,7 @@ static void cpu_idle_loop(void)
 			check_pgt_cache();
 			rmb();
 
-			if (cpu_is_offline(cpu)) {
+			if (cpu_is_offline(smp_processor_id())) {
 				rcu_cpu_notify(NULL, CPU_DYING_IDLE,
 					       (void *)(long)smp_processor_id());
 				smp_mb(); /* all activity before dead. */

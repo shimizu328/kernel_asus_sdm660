@@ -17,7 +17,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/cache.h>
 #include <linux/elf.h>
 #include <linux/err.h>
 #include <linux/kernel.h>
@@ -42,7 +41,7 @@ static struct page **vdso_text_pagelist;
 extern char vdso_start[], vdso_end[];
 
 /* Total number of pages needed for the data and text portions of the VDSO. */
-unsigned int vdso_total_pages __ro_after_init;
+unsigned int vdso_total_pages __read_mostly;
 
 /*
  * The VDSO data page.
@@ -50,13 +49,13 @@ unsigned int vdso_total_pages __ro_after_init;
 static union vdso_data_store vdso_data_store __page_aligned_data;
 static struct vdso_data *vdso_data = &vdso_data_store.data;
 
-static struct page *vdso_data_page __ro_after_init;
-static const struct vm_special_mapping vdso_data_mapping = {
+static struct page *vdso_data_page;
+static struct vm_special_mapping vdso_data_mapping = {
 	.name = "[vvar]",
 	.pages = &vdso_data_page,
 };
 
-static struct vm_special_mapping vdso_text_mapping __ro_after_init = {
+static struct vm_special_mapping vdso_text_mapping = {
 	.name = "[vdso]",
 };
 
@@ -70,7 +69,7 @@ struct elfinfo {
 /* Cached result of boot-time check for whether the arch timer exists,
  * and if so, whether the virtual counter is useable.
  */
-static bool cntvct_ok __ro_after_init;
+static bool cntvct_ok __read_mostly;
 
 static bool __init cntvct_functional(void)
 {
@@ -175,8 +174,6 @@ static void __init patch_vdso(void *ehdr)
 	if (!cntvct_ok) {
 		vdso_nullpatch_one(&einfo, "__vdso_gettimeofday");
 		vdso_nullpatch_one(&einfo, "__vdso_clock_gettime");
-		vdso_nullpatch_one(&einfo, "__vdso_clock_getres");
-		/* do not zero out __vdso_time, no cntvct_ok dependency */
 	}
 }
 
@@ -191,7 +188,7 @@ static int __init vdso_init(void)
 	}
 
 	text_pages = (vdso_end - vdso_start) >> PAGE_SHIFT;
-	pr_debug("vdso: %i text pages at base %pK\n", text_pages, vdso_start);
+	pr_debug("vdso: %i text pages at base %p\n", text_pages, vdso_start);
 
 	/* Allocate the VDSO text pagelist */
 	vdso_text_pagelist = kcalloc(text_pages, sizeof(struct page *),
@@ -231,7 +228,7 @@ static int install_vvar(struct mm_struct *mm, unsigned long addr)
 				       VM_READ | VM_MAYREAD,
 				       &vdso_data_mapping);
 
-	return PTR_ERR_OR_ZERO(vma);
+	return IS_ERR(vma) ? PTR_ERR(vma) : 0;
 }
 
 /* assumes mmap_sem is write-locked */
@@ -262,14 +259,14 @@ void arm_install_vdso(struct mm_struct *mm, unsigned long addr)
 
 static void vdso_write_begin(struct vdso_data *vdata)
 {
-	++vdso_data->tb_seq_count;
+	++vdso_data->seq_count;
 	smp_wmb(); /* Pairs with smp_rmb in vdso_read_retry */
 }
 
 static void vdso_write_end(struct vdso_data *vdata)
 {
 	smp_wmb(); /* Pairs with smp_rmb in vdso_read_begin */
-	++vdso_data->tb_seq_count;
+	++vdso_data->seq_count;
 }
 
 static bool tk_is_cntvct(const struct timekeeper *tk)
@@ -293,10 +290,10 @@ static bool tk_is_cntvct(const struct timekeeper *tk)
  * counter again, making it even, indicating to userspace that the
  * update is finished.
  *
- * Userspace is expected to sample tb_seq_count before reading any other
- * fields from the data page.  If tb_seq_count is odd, userspace is
+ * Userspace is expected to sample seq_count before reading any other
+ * fields from the data page.  If seq_count is odd, userspace is
  * expected to wait until it becomes even.  After copying data from
- * the page, userspace must sample tb_seq_count again; if it has changed
+ * the page, userspace must sample seq_count again; if it has changed
  * from its previous value, userspace must retry the whole sequence.
  *
  * Calls to update_vsyscall are serialized by the timekeeping core.
@@ -314,28 +311,20 @@ void update_vsyscall(struct timekeeper *tk)
 
 	vdso_write_begin(vdso_data);
 
-	vdso_data->use_syscall			= !tk_is_cntvct(tk);
+	vdso_data->tk_is_cntvct			= tk_is_cntvct(tk);
 	vdso_data->xtime_coarse_sec		= tk->xtime_sec;
 	vdso_data->xtime_coarse_nsec		= (u32)(tk->tkr_mono.xtime_nsec >>
 							tk->tkr_mono.shift);
 	vdso_data->wtm_clock_sec		= wtm->tv_sec;
 	vdso_data->wtm_clock_nsec		= wtm->tv_nsec;
 
-	if (!vdso_data->use_syscall) {
-		struct timespec btm = ktime_to_timespec(tk->offs_boot);
-
+	if (vdso_data->tk_is_cntvct) {
 		vdso_data->cs_cycle_last	= tk->tkr_mono.cycle_last;
-		vdso_data->raw_time_sec		= tk->raw_sec;
-		vdso_data->raw_time_nsec	= tk->tkr_raw.xtime_nsec;
 		vdso_data->xtime_clock_sec	= tk->xtime_sec;
 		vdso_data->xtime_clock_snsec	= tk->tkr_mono.xtime_nsec;
-		vdso_data->cs_mono_mult		= tk->tkr_mono.mult;
-		vdso_data->cs_raw_mult		= tk->tkr_raw.mult;
-		/* tkr_mono.shift == tkr_raw.shift */
+		vdso_data->cs_mult		= tk->tkr_mono.mult;
 		vdso_data->cs_shift		= tk->tkr_mono.shift;
 		vdso_data->cs_mask		= tk->tkr_mono.mask;
-		vdso_data->btm_sec		= btm.tv_sec;
-		vdso_data->btm_nsec		= btm.tv_nsec;
 	}
 
 	vdso_write_end(vdso_data);

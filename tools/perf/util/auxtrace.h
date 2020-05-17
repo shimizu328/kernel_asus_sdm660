@@ -44,7 +44,6 @@ enum auxtrace_type {
 	PERF_AUXTRACE_UNKNOWN,
 	PERF_AUXTRACE_INTEL_PT,
 	PERF_AUXTRACE_INTEL_BTS,
-	PERF_AUXTRACE_CS_ETM,
 };
 
 enum itrace_period_type {
@@ -297,8 +296,7 @@ struct auxtrace_record {
 	int (*recording_options)(struct auxtrace_record *itr,
 				 struct perf_evlist *evlist,
 				 struct record_opts *opts);
-	size_t (*info_priv_size)(struct auxtrace_record *itr,
-				 struct perf_evlist *evlist);
+	size_t (*info_priv_size)(struct auxtrace_record *itr);
 	int (*info_fill)(struct auxtrace_record *itr,
 			 struct perf_session *session,
 			 struct auxtrace_info_event *auxtrace_info,
@@ -434,8 +432,7 @@ int auxtrace_parse_snapshot_options(struct auxtrace_record *itr,
 int auxtrace_record__options(struct auxtrace_record *itr,
 			     struct perf_evlist *evlist,
 			     struct record_opts *opts);
-size_t auxtrace_record__info_priv_size(struct auxtrace_record *itr,
-				       struct perf_evlist *evlist);
+size_t auxtrace_record__info_priv_size(struct auxtrace_record *itr);
 int auxtrace_record__info_fill(struct auxtrace_record *itr,
 			       struct perf_session *session,
 			       struct auxtrace_info_event *auxtrace_info,

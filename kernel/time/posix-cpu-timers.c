@@ -943,9 +943,9 @@ static void check_cpu_itimer(struct task_struct *tsk, struct cpu_itimer *it,
 			it->expires = 0;
 		}
 
-//		trace_itimer_expire(signo == SIGPROF ?
-//				    ITIMER_PROF : ITIMER_VIRTUAL,
-//				    tsk->signal->leader_pid, cur_time);
+		trace_itimer_expire(signo == SIGPROF ?
+				    ITIMER_PROF : ITIMER_VIRTUAL,
+				    tsk->signal->leader_pid, cur_time);
 		__group_send_sig_info(signo, SEND_SIG_PRIV, tsk);
 	}
 
@@ -1250,7 +1250,7 @@ void run_posix_cpu_timers(struct task_struct *tsk)
 void set_process_cpu_timer(struct task_struct *tsk, unsigned int clock_idx,
 			   cputime_t *newval, cputime_t *oldval)
 {
-	unsigned long long now = 0;
+	unsigned long long now;
 
 	WARN_ON_ONCE(clock_idx == CPUCLOCK_SCHED);
 	cpu_timer_sample_group(clock_idx, tsk, &now);

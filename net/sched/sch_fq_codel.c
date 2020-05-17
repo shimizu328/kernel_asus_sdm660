@@ -527,6 +527,8 @@ static unsigned long fq_codel_get(struct Qdisc *sch, u32 classid)
 static unsigned long fq_codel_bind(struct Qdisc *sch, unsigned long parent,
 			      u32 classid)
 {
+	/* we cannot bypass queue discipline anymore */
+	sch->flags &= ~TCQ_F_CAN_BYPASS;
 	return 0;
 }
 
@@ -586,7 +588,7 @@ static int fq_codel_dump_class_stats(struct Qdisc *sch, unsigned long cl,
 		qs.backlog = q->backlogs[idx];
 		qs.drops = flow->dropped;
 	}
-	if (gnet_stats_copy_queue(d, NULL, &qs, 0) < 0)
+	if (gnet_stats_copy_queue(d, NULL, &qs, qs.qlen) < 0)
 		return -1;
 	if (idx < q->flows_cnt)
 		return gnet_stats_copy_app(d, &xstats, sizeof(xstats));
