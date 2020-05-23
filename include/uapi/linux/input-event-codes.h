@@ -336,6 +336,15 @@
 
 #define KEY_MICMUTE		248	/* Mute / unmute the microphone */
 
+#if defined(CONFIG_MACH_ASUS_X00T) && (defined(CONFIG_TOUCHSCREEN_NT36xxx) || defined(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_v27))
+#define KEY_TP_GESTURE_C 	249
+#define KEY_TP_GESTURE_E 	250
+#define KEY_TP_GESTURE_S 	251
+#define KEY_TP_GESTURE_V 	252
+#define KEY_TP_GESTURE_W 	253
+#define KEY_TP_GESTURE_Z 	254
+#endif
+
 /* Code 255 is reserved for special needs of AT keyboard driver */
 
 #define BTN_MISC		0x100
@@ -601,6 +610,14 @@
 #define KEY_SCREENSAVER		0x245	/* AL Screen Saver */
 #define KEY_VOICECOMMAND		0x246	/* Listening Voice Command */
 
+#define FP_KEY_UP			0x258
+#define FP_KEY_DOWN		0x259
+#define FP_KEY_LEFT		0x25a
+#define FP_KEY_RIGHT		0x25b
+#define FP_KEY_CLICK		0x25c
+#define FP_KEY_DOUBLE_CLICK		0x25d
+#define FP_KEY_LONG_PRESS          0x25e
+
 #define KEY_BRIGHTNESS_MIN		0x250	/* Set Brightness to Minimum */
 #define KEY_BRIGHTNESS_MAX		0x251	/* Set Brightness to Maximum */
 
@@ -652,6 +669,9 @@
 #define BTN_TRIGGER_HAPPY38		0x2e5
 #define BTN_TRIGGER_HAPPY39		0x2e6
 #define BTN_TRIGGER_HAPPY40		0x2e7
+
+#define KEY_SARSENSOR_NEAR		0x2ea
+#define KEY_SARSENSOR_FAR		0x2eb
 
 /* We avoid low common keys in module aliases so they don't get huge. */
 #define KEY_MIN_INTERESTING	KEY_MUTE
@@ -758,7 +778,11 @@
 #define SW_ROTATE_LOCK		0x0c  /* set = rotate locked/disabled */
 #define SW_LINEIN_INSERT	0x0d  /* set = inserted */
 #define SW_MUTE_DEVICE		0x0e  /* set = device disabled */
-#define SW_MAX			0x0f
+#define SW_HPHL_OVERCURRENT	0x0f  /* set = over current on left hph */
+#define SW_HPHR_OVERCURRENT	0x10  /* set = over current on right hph */
+#define SW_MICROPHONE2_INSERT   0x11  /* set = inserted */
+#define SW_UNSUPPORT_INSERT	0x12  /* set = unsupported device inserted */
+#define SW_MAX			0x20
 #define SW_CNT			(SW_MAX+1)
 
 /*

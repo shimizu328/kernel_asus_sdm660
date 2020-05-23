@@ -316,12 +316,18 @@ static struct tnode *tnode_alloc(int bits)
 
 static inline void empty_child_inc(struct key_vector *n)
 {
-	++tn_info(n)->empty_children ? : ++tn_info(n)->full_children;
+	tn_info(n)->empty_children++;
+
+	if (!tn_info(n)->empty_children)
+		tn_info(n)->full_children++;
 }
 
 static inline void empty_child_dec(struct key_vector *n)
 {
-	tn_info(n)->empty_children-- ? : tn_info(n)->full_children--;
+	if (!tn_info(n)->empty_children)
+		tn_info(n)->full_children--;
+
+	tn_info(n)->empty_children--;
 }
 
 static struct key_vector *leaf_new(t_key key, struct fib_alias *fa)
@@ -1279,7 +1285,7 @@ int fib_table_lookup(struct fib_table *tb, const struct flowi4 *flp,
 	unsigned long index;
 	t_key cindex;
 
-	trace_fib_table_lookup(tb->tb_id, flp);
+//	trace_fib_table_lookup(tb->tb_id, flp);
 
 	pn = t->kv;
 	cindex = 0;
@@ -1445,7 +1451,7 @@ found:
 #ifdef CONFIG_IP_FIB_TRIE_STATS
 			this_cpu_inc(stats->semantic_match_passed);
 #endif
-			trace_fib_table_lookup_nh(nh);
+//			trace_fib_table_lookup_nh(nh);
 
 			return err;
 		}
@@ -1694,7 +1700,7 @@ struct fib_table *fib_trie_unmerge(struct fib_table *oldtb)
 	lt = (struct trie *)local_tb->tb_data;
 
 	while ((l = leaf_walk_rcu(&tp, key)) != NULL) {
-		struct key_vector *local_l = NULL, *local_tp;
+		struct key_vector *local_l = NULL, *local_tp = NULL;
 
 		hlist_for_each_entry_rcu(fa, &l->leaf, fa_list) {
 			struct fib_alias *new_fa;

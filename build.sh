@@ -11,7 +11,7 @@ if [[ $DEVICE != X00T ]]; then
     exit 1
 fi
 
-TOP=$(realpath ../)
+TOP=$(realpath ../../)
 
 export KBUILD_BUILD_USER=prabhat774
 export KBUILD_BUILD_HOST=linux
@@ -31,6 +31,7 @@ make \
     mrproper \
     O=out \
     ARCH=arm64 \
+    SUBARCH=ARM64 \
     CC=clang \
     HOSTCC=clang \
     HOSTCXX=clang++ \
@@ -43,6 +44,7 @@ make \
     -j$(nproc) \
     O=out \
     ARCH=arm64 \
+    SUBARCH=ARM64 \
     CC=clang \
     HOSTCC=clang \
     HOSTCXX=clang++ \
@@ -52,9 +54,9 @@ make \
     
  
 
-rm -rf "$TOP/device/asus/$DEVICE-kernel"
-mkdir -p "$TOP/device/asus/$DEVICE-kernel"
-cp out/arch/arm64/boot/Image.gz-dtb "$TOP/device/asus/$DEVICE-kernel"
+rm -rf "$TOP/Output/$DEVICE-kernel"
+mkdir -p "$TOP/Output/$DEVICE-kernel"
+cp out/arch/arm64/boot/Image.gz-dtb "$TOP/Output/$DEVICE-kernel"
 
 
 
