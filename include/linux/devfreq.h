@@ -161,7 +161,6 @@ struct devfreq {
 	struct list_head node;
 
 	struct mutex lock;
-	struct mutex sysfs_lock;
 	struct device dev;
 	struct devfreq_dev_profile *profile;
 	const struct devfreq_governor *governor;
@@ -176,8 +175,6 @@ struct devfreq {
 
 	unsigned long min_freq;
 	unsigned long max_freq;
-	bool is_boost_device;
-	bool max_boost;
 	bool stop_polling;
 
 	/* information for device frequency transition */
@@ -253,9 +250,6 @@ struct devfreq_simple_ondemand_data {
 };
 #endif
 
-/* Caution: devfreq->lock must be locked before calling update_devfreq */
-extern int update_devfreq(struct devfreq *devfreq);
-
 #else /* !CONFIG_PM_DEVFREQ */
 static inline struct devfreq *devfreq_add_device(struct device *dev,
 					  struct devfreq_dev_profile *profile,
@@ -323,11 +317,6 @@ static inline void devm_devfreq_unregister_opp_notifier(struct device *dev,
 }
 
 static inline int devfreq_update_stats(struct devfreq *df)
-{
-	return -EINVAL;
-}
-
-static inline int update_devfreq(struct devfreq *devfreq)
 {
 	return -EINVAL;
 }

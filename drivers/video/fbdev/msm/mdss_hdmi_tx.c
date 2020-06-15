@@ -1,4 +1,4 @@
-/* Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2010-2017,2019-2020, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -571,7 +571,6 @@ static ssize_t hdmi_tx_sysfs_rda_connected(struct device *dev,
 	return ret;
 } /* hdmi_tx_sysfs_rda_connected */
 
-#define char_to_nib 2
 static ssize_t hdmi_tx_sysfs_wta_edid(struct device *dev,
 	struct device_attribute *attr, const char *buf, size_t count)
 {
@@ -579,6 +578,7 @@ static ssize_t hdmi_tx_sysfs_wta_edid(struct device *dev,
 	struct hdmi_tx_ctrl *hdmi_ctrl = NULL;
 	int i = 0;
 	const char *buf_t = buf;
+	const int char_to_nib = 2;
 	int edid_size = count / char_to_nib;
 
 	hdmi_ctrl = hdmi_tx_get_drvdata_from_sysfs_dev(dev);
@@ -3516,6 +3516,8 @@ static void hdmi_tx_hpd_off(struct hdmi_tx_ctrl *hdmi_ctrl)
 	hdmi_ctrl->hpd_initialized = false;
 	hdmi_ctrl->hpd_off_pending = false;
 	hdmi_ctrl->dc_support = false;
+
+	hdmi_edid_reset_parser(hdmi_tx_get_fd(HDMI_TX_FEAT_EDID));
 
 	DEV_DBG("%s: HPD is now OFF\n", __func__);
 } /* hdmi_tx_hpd_off */

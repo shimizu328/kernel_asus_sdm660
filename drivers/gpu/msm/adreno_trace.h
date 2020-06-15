@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -42,7 +42,7 @@
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM kgsl
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH ../../drivers/gpu/msm
+#define TRACE_INCLUDE_PATH .
 #undef TRACE_INCLUDE_FILE
 #define TRACE_INCLUDE_FILE adreno_trace
 
@@ -600,15 +600,15 @@ TRACE_EVENT(adreno_preempt_trigger,
 	TP_PROTO(struct adreno_ringbuffer *cur, struct adreno_ringbuffer *next),
 	TP_ARGS(cur, next),
 	TP_STRUCT__entry(
-		__field(unsigned int, cur)
-		__field(unsigned int, next)
+		__field(struct adreno_ringbuffer *, cur)
+		__field(struct adreno_ringbuffer *, next)
 	),
 	TP_fast_assign(
-		__entry->cur = cur->id;
-		__entry->next = next->id;
+		__entry->cur = cur;
+		__entry->next = next;
 	),
 	TP_printk("trigger from id=%d to id=%d",
-		__entry->cur, __entry->next
+		__entry->cur->id, __entry->next->id
 	)
 );
 
@@ -616,15 +616,15 @@ TRACE_EVENT(adreno_preempt_done,
 	TP_PROTO(struct adreno_ringbuffer *cur, struct adreno_ringbuffer *next),
 	TP_ARGS(cur, next),
 	TP_STRUCT__entry(
-		__field(unsigned int, cur)
-		__field(unsigned int, next)
+		__field(struct adreno_ringbuffer *, cur)
+		__field(struct adreno_ringbuffer *, next)
 	),
 	TP_fast_assign(
-		__entry->cur = cur->id;
-		__entry->next = next->id;
+		__entry->cur = cur;
+		__entry->next = next;
 	),
 	TP_printk("done switch to id=%d from id=%d",
-		__entry->next, __entry->cur
+		__entry->next->id, __entry->cur->id
 	)
 );
 #endif /* _ADRENO_TRACE_H */

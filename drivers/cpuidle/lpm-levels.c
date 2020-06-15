@@ -680,7 +680,7 @@ static int cpu_power_select(struct cpuidle_device *dev,
 				next_wakeup_us = next_event_us - lvl_latency_us;
 		}
 
-		if (!i && !cpu_isolated(dev->cpu)) {
+		if (!i) {
 			/*
 			 * If the next_wake_us itself is not sufficient for
 			 * deeper low power modes than clock gating do not
@@ -1272,9 +1272,6 @@ static void cluster_unprepare(struct lpm_cluster *cluster,
 
 		lpm_wa_cx_unvote_send();
 		msm_mpm_exit_sleep(from_idle);
-
-		if (!from_idle)
-			suspend_wake_time = 0;
 	}
 
 //	trace_cluster_exit(cluster->cluster_name, cluster->last_level,

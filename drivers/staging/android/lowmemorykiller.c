@@ -251,7 +251,7 @@ module_param_named(enable_adaptive_lmk, enable_adaptive_lmk, int,
  * 90-94. Usually this is a pseudo minfree value, higher than the
  * highest configured value in minfree array.
  */
-static int vmpressure_file_min;
+static int vmpressure_file_min = 89600;
 module_param_named(vmpressure_file_min, vmpressure_file_min, int,
 		   S_IRUGO | S_IWUSR);
 
@@ -294,6 +294,7 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 	if (pressure >= 95) {
 		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
 			global_page_state(NR_SHMEM) -
+			global_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 		other_free = global_page_state(NR_FREE_PAGES);
 
@@ -307,6 +308,7 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 
 		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
 			global_page_state(NR_SHMEM) -
+			global_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 
 		other_free = global_page_state(NR_FREE_PAGES);
@@ -319,6 +321,7 @@ static int lmk_vmpressure_notifier(struct notifier_block *nb,
 	} else if (atomic_read(&shift_adj)) {
 		other_file = global_page_state(NR_FILE_PAGES) + zcache_pages() -
 			global_page_state(NR_SHMEM) -
+			global_page_state(NR_UNEVICTABLE) -
 			total_swapcache_pages();
 		other_free = global_page_state(NR_FREE_PAGES);
 

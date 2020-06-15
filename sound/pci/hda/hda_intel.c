@@ -1984,17 +1984,6 @@ static const struct pci_device_id driver_blacklist[] = {
 	{}
 };
 
-/* Blacklist for skipping the whole probe:
- * some HD-audio PCI entries are exposed without any codecs, and such devices
- * should be ignored from the beginning.
- */
-static const struct snd_pci_quirk driver_blacklist[] = {
-	SND_PCI_QUIRK(0x1043, 0x874f, "ASUS ROG Zenith II / Strix", 0),
-	SND_PCI_QUIRK(0x1462, 0xcb59, "MSI TRX40 Creator", 0),
-	SND_PCI_QUIRK(0x1462, 0xcb60, "MSI TRX40", 0),
-	{}
-};
-
 static const struct hda_controller_ops pci_hda_ops = {
 	.disable_msi_reset_irq = disable_msi_reset_irq,
 	.substream_alloc_pages = substream_alloc_pages,
@@ -2015,11 +2004,6 @@ static int azx_probe(struct pci_dev *pci,
 	int err;
 
 	if (pci_match_id(driver_blacklist, pci)) {
-		dev_info(&pci->dev, "Skipping the blacklisted device\n");
-		return -ENODEV;
-	}
-
-	if (snd_pci_quirk_lookup(pci, driver_blacklist)) {
 		dev_info(&pci->dev, "Skipping the blacklisted device\n");
 		return -ENODEV;
 	}
