@@ -30,11 +30,10 @@
 #include <linux/qdsp6v2/apr_tal.h>
 #include <sound/q6core.h>
 
-#ifdef CONFIG_MACH_ASUS_X00T
-#define AFE_PARAM_ID_TFADSP_RX_CFG 	(0x1000B921)
+
 #define AFE_MODULE_ID_TFADSP_RX		(0x1000B911)
+#define AFE_PARAM_ID_TFADSP_RX_CFG 	        (0X1000B921)
 #define AFE_PARAM_ID_TFADSP_RX_GET_RESULT	(0x1000B922)
-#endif
 
 #define WAKELOCK_TIMEOUT	5000
 enum {
@@ -1705,11 +1704,9 @@ static int afe_spk_prot_prepare(int src_port, int dst_port, int param_id,
 	case AFE_PARAM_ID_SP_V2_EX_VI_FTM_CFG:
 		param_info.module_id = AFE_MODULE_SPEAKER_PROTECTION_V2_EX_VI;
 		break;
-#ifdef CONFIG_MACH_ASUS_X00T
 	case AFE_PARAM_ID_TFADSP_RX_CFG:
 		param_info.module_id = AFE_MODULE_ID_TFADSP_RX;
 		break;
-#endif
 	default:
 		pr_err("%s: default case 0x%x\n", __func__, param_id);
 		goto fail_cmd;
@@ -7224,9 +7221,9 @@ int send_tfa_cal_apr(void *buf, int cmd_size, bool bRead)
 	param_hdr.param_size = cmd_size;
 
 	if (!bRead)
-		param_hdr.param_id = AFE_PARAM_ID_TFADSP_RX_CFG;
+		param_hdr.module_id = AFE_PARAM_ID_TFADSP_RX_CFG;
 	else
-		param_hdr.param_id = AFE_PARAM_ID_TFADSP_RX_GET_RESULT;
+		param_hdr.module_id = AFE_PARAM_ID_TFADSP_RX_GET_RESULT;
 
 	/* build raw data struct. */
 	result = q6common_pack_pp_params((u8 *)tfa_cal->cal_data.kvaddr,

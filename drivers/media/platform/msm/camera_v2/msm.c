@@ -623,8 +623,8 @@ static inline int __msm_remove_session_cmd_ack_q(void *d1, void *d2)
 	struct msm_command_ack *cmd_ack = d1;
 
 	if (&cmd_ack->command_q == NULL)
-		return 0;
-
+		return 0;	
+	
 	msm_queue_drain(&cmd_ack->command_q, struct msm_command, list);
 
 	return 0;

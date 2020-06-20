@@ -370,7 +370,7 @@ static int smd_tty_dummy_probe(struct platform_device *pdev)
 	for (n = 0; n < MAX_SMD_TTYS; ++n) {
 		if (smd_tty[n].dev_name == NULL)
 			continue;
-
+			
 		if (pdev->id == smd_tty[n].edge &&
 			!strcmp(pdev->name, smd_tty[n].dev_name)) {
 			complete_all(&smd_tty[n].ch_allocated);

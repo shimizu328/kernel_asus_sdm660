@@ -798,7 +798,7 @@ static int ath10k_download_fw(struct ath10k *ar)
 	if (ret) {
 		ath10k_err(ar, "failed to download firmware: %d\n",
 			   ret);
-		return ret;
+		goto err_free_firmware_files;
 	}
 
 	return ret;

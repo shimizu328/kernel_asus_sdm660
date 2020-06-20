@@ -11,7 +11,7 @@ if [[ $DEVICE != X00T ]]; then
     exit 1
 fi
 
-TOP=$(realpath ../../)
+TOP=$(realpath ../)
 
 export KBUILD_BUILD_USER=prabhat774
 export KBUILD_BUILD_HOST=linux

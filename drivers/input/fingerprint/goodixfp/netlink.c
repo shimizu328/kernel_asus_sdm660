@@ -102,3 +102,4 @@ void netlink_exit(void)
 
 	pr_info("self module exited\n");
 }
+
