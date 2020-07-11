@@ -7216,10 +7216,8 @@ static void csr_roam_process_start_bss_success(tpAniSirGlobal mac_ctx,
 	tDot11fBeaconIEs *ies_ptr = NULL;
 	tSirMacAddr bcast_mac = { 0xff, 0xff, 0xff, 0xff, 0xff, 0xff };
 	QDF_STATUS status;
-#ifdef FEATURE_WLAN_DIAG_SUPPORT_CSR
 	host_log_ibss_pkt_type *ibss_log;
 	uint32_t bi;
-#endif
 	eCsrEncryptionType encr_type;
 #ifdef FEATURE_WLAN_MCC_TO_SCC_SWITCH
 	tSirSmeHTProfile *src_profile = NULL;
@@ -7990,9 +7988,7 @@ static bool csr_roam_process_results(tpAniSirGlobal mac_ctx, tSmeCmd *cmd,
 	tCsrRoamProfile *profile = &cmd->u.roamCmd.roamProfile;
 	eRoamCmdStatus roam_status;
 	eCsrRoamResult roam_result;
-#ifdef FEATURE_WLAN_DIAG_SUPPORT_CSR
 	host_log_ibss_pkt_type *ibss_log;
-#endif
 	tSirSmeStartBssRsp  *start_bss_rsp = NULL;
 
 	if (!session) {
@@ -10720,7 +10716,7 @@ void csr_roam_joined_state_msg_processor(tpAniSirGlobal pMac, void *pMsgBuf)
 		tSirSmeAssocIndToUpperLayerCnf *pUpperLayerAssocCnf;
 		tCsrRoamInfo roamInfo;
 		tCsrRoamInfo *pRoamInfo = NULL;
-		uint32_t sessionId;
+		uint32_t sessionId = 0;
 		QDF_STATUS status;
 
 		sme_debug("ASSOCIATION confirmation can be given to upper layer ");
@@ -20179,7 +20175,7 @@ static void csr_add_rssi_reject_ap_list(tpAniSirGlobal mac_ctx,
 #define RSO_RESTART_BIT     (1<<ROAM_SCAN_OFFLOAD_RESTART)
 #define RSO_UPDATE_CFG_BIT  (1<<ROAM_SCAN_OFFLOAD_UPDATE_CFG)
 #define RSO_ABORT_SCAN_BIT  (1<<ROAM_SCAN_OFFLOAD_ABORT_SCAN)
-#define RSO_START_ALLOW_MASK   (RSO_STOP_BIT | RSO_UPDATE_CFG_BIT)
+#define RSO_START_ALLOW_MASK   (RSO_START_BIT |RSO_STOP_BIT | RSO_UPDATE_CFG_BIT)
 #define RSO_STOP_ALLOW_MASK    (RSO_UPDATE_CFG_BIT | RSO_RESTART_BIT | \
 		RSO_STOP_BIT | RSO_START_BIT | RSO_ABORT_SCAN_BIT)
 #define RSO_RESTART_ALLOW_MASK (RSO_UPDATE_CFG_BIT | RSO_START_BIT | \
@@ -22876,6 +22872,8 @@ static QDF_STATUS csr_process_roam_sync_callback(tpAniSirGlobal mac_ctx,
 	tSirSmeHTProfile *src_profile = NULL;
 	tCsrRoamHTProfile *dst_profile = NULL;
 #endif
+	tpCsrNeighborRoamControlInfo neigh_roam_info =
+				&mac_ctx->roam.neighborRoamInfo[session_id];
 
 	if (!session) {
 		sme_err("LFR3: Session not found");
@@ -22892,6 +22890,7 @@ static QDF_STATUS csr_process_roam_sync_callback(tpAniSirGlobal mac_ctx,
 		csr_roam_roaming_offload_timer_action(mac_ctx,
 				0, session_id, ROAMING_OFFLOAD_TIMER_STOP);
 		if (session->discon_in_progress ||
+		    neigh_roam_info->last_sent_cmd == ROAM_SCAN_OFFLOAD_STOP ||
 		    !CSR_IS_ROAM_JOINED(mac_ctx, session_id)) {
 			QDF_TRACE(QDF_MODULE_ID_SME, QDF_TRACE_LEVEL_DEBUG,
 				FL("LFR3: Session not in connected state or disconnect is in progress %d"),
@@ -23088,6 +23087,8 @@ static QDF_STATUS csr_process_roam_sync_callback(tpAniSirGlobal mac_ctx,
 					eCSR_ROAM_SUBSTATE_NONE,
 					session_id);
 		}
+		csr_neighbor_roam_state_transition(mac_ctx,
+				eCSR_NEIGHBOR_ROAM_STATE_INIT, session_id);
 	}
 	roam_info->nBeaconLength = 0;
 	roam_info->nAssocReqLength = roam_synch_data->reassoc_req_length -

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012-2019 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2012-2020 The Linux Foundation. All rights reserved.
  *
  * Permission to use, copy, modify, and/or distribute this software for
  * any purpose with or without fee is hereby granted, provided that the
@@ -659,7 +659,7 @@ uint8_t wlan_hdd_find_opclass(tHalHandle hal, uint8_t channel,
  */
 static void hdd_qdf_trace_enable(QDF_MODULE_ID moduleId, uint32_t bitmask)
 {
-	QDF_TRACE_LEVEL level;
+	//QDF_TRACE_LEVEL level;
 
 	/*
 	 * if the bitmask is the default value, then a bitmask was not
@@ -673,7 +673,8 @@ static void hdd_qdf_trace_enable(QDF_MODULE_ID moduleId, uint32_t bitmask)
 	qdf_trace_set_value(moduleId, QDF_TRACE_LEVEL_NONE, 0);
 
 	/* now cycle through the bitmask until all "set" bits are serviced */
-	level = QDF_TRACE_LEVEL_FATAL;
+
+	/* level = QDF_TRACE_LEVEL_FATAL;
 	while (0 != bitmask) {
 		if (bitmask & 1)
 			qdf_trace_set_value(moduleId, level, 1);
@@ -681,6 +682,7 @@ static void hdd_qdf_trace_enable(QDF_MODULE_ID moduleId, uint32_t bitmask)
 		level++;
 		bitmask >>= 1;
 	}
+*/
 }
 
 /**
@@ -1117,6 +1119,7 @@ static void hdd_update_wiphy_vhtcap(hdd_context_t *hdd_ctx)
 	struct ieee80211_supported_band *band_5g =
 		hdd_ctx->wiphy->bands[NL80211_BAND_5GHZ];
 	uint32_t val;
+	uint32_t value1;
 
 	if (!band_5g) {
 		hdd_debug("5GHz band disabled, skipping capability population");
@@ -1132,6 +1135,13 @@ static void hdd_update_wiphy_vhtcap(hdd_context_t *hdd_ctx)
 
 	hdd_debug("Updated wiphy vhtcap:0x%x, CSNAntSupp:%d, NumSoundDim:%d",
 		  band_5g->vht_cap.cap, hdd_ctx->config->txBFCsnValue, val);
+
+	sme_cfg_get_int(hdd_ctx->hHal, WNI_CFG_VHT_RX_MCS_MAP, &value1);
+	band_5g->vht_cap.vht_mcs.rx_mcs_map = value1;
+
+	sme_cfg_get_int(hdd_ctx->hHal, WNI_CFG_VHT_TX_MCS_MAP, &value1);
+	band_5g->vht_cap.vht_mcs.tx_mcs_map = value1;
+
 }
 
 /**
@@ -1218,30 +1228,9 @@ static void hdd_update_tgt_ht_cap(hdd_context_t *hdd_ctx,
 
 	enable_tx_stbc = pconfig->enableTxSTBC;
 
-	if (pconfig->enable2x2 && (cfg->num_rf_chains == 2)) {
+	if (pconfig->enable2x2 && (cfg->num_rf_chains == 2))
 		pconfig->enable2x2 = 1;
-	} else {
-		pconfig->enable2x2 = 0;
-		enable_tx_stbc = 0;
 
-		/* 1x1 */
-		/* Update Rx Highest Long GI data Rate */
-		if (sme_cfg_set_int(hdd_ctx->hHal,
-				    WNI_CFG_VHT_RX_HIGHEST_SUPPORTED_DATA_RATE,
-				    VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_1_1)
-				== QDF_STATUS_E_FAILURE) {
-			hdd_err("Could not pass on WNI_CFG_VHT_RX_HIGHEST_SUPPORTED_DATA_RATE to CCM");
-		}
-
-		/* Update Tx Highest Long GI data Rate */
-		if (sme_cfg_set_int
-			    (hdd_ctx->hHal,
-			     WNI_CFG_VHT_TX_HIGHEST_SUPPORTED_DATA_RATE,
-			     VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_1_1) ==
-			    QDF_STATUS_E_FAILURE) {
-			hdd_err("VHT_TX_HIGHEST_SUPP_RATE_1_1 to CCM fail");
-		}
-	}
 	if (!(cfg->ht_tx_stbc && pconfig->enable2x2))
 		enable_tx_stbc = 0;
 	phtCapInfo->txSTBC = enable_tx_stbc;
@@ -1287,11 +1276,53 @@ static void hdd_update_tgt_vht_cap(hdd_context_t *hdd_ctx,
 	uint32_t ch_width = eHT_CHANNEL_WIDTH_80MHZ;
 	uint32_t hw_rx_ldpc_enabled;
 	struct wma_caps_per_phy caps_per_phy;
+	uint32_t tx_highest_data_rate;
+	uint32_t rx_highest_data_rate;
 
 	if (!band_5g) {
 		hdd_debug("5GHz band disabled, skipping capability population");
 		return;
 	}
+
+	if (pconfig->enable2x2) {
+		if (cfg->vht_short_gi_80 & WMI_VHT_CAP_SGI_80MHZ) {
+			/* Update 2x2 Highest Short GI data rate */
+			tx_highest_data_rate =
+				VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_2_2_SGI80;
+			rx_highest_data_rate =
+				VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_2_2_SGI80;
+		} else {
+			/* Update 2x2 Rx Highest Long GI data Rate */
+			tx_highest_data_rate =
+					VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_2_2;
+			rx_highest_data_rate =
+					VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_2_2;
+		}
+	} else if (cfg->vht_short_gi_80 & WMI_VHT_CAP_SGI_80MHZ) {
+		/* Update 1x1 Highest Short GI data rate */
+		tx_highest_data_rate =
+				VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_1_1_SGI80;
+		rx_highest_data_rate =
+				VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_1_1_SGI80;
+	} else {
+		 /* Update 1x1 Highest Long GI data rate */
+		tx_highest_data_rate = VHT_TX_HIGHEST_SUPPORTED_DATA_RATE_1_1;
+		rx_highest_data_rate = VHT_RX_HIGHEST_SUPPORTED_DATA_RATE_1_1;
+	}
+
+	status = sme_cfg_set_int(hdd_ctx->hHal,
+				 WNI_CFG_VHT_RX_HIGHEST_SUPPORTED_DATA_RATE,
+				 rx_highest_data_rate);
+
+	if (!QDF_IS_STATUS_SUCCESS(status))
+		hdd_err("Failed to set rx_supp_data_rate");
+
+	status = sme_cfg_set_int(hdd_ctx->hHal,
+				 WNI_CFG_VHT_TX_HIGHEST_SUPPORTED_DATA_RATE,
+				 tx_highest_data_rate);
+
+	if (!QDF_IS_STATUS_SUCCESS(status))
+		hdd_err("Failed to set tx_supp_data_rate");
 
 	/* Get the current MPDU length */
 	status =
@@ -1638,6 +1669,8 @@ static void hdd_update_tgt_vht_cap(hdd_context_t *hdd_ctx,
 	if (cfg->vht_txop_ps & WMI_VHT_CAP_TXOP_PS)
 		band_5g->vht_cap.cap |= IEEE80211_VHT_CAP_VHT_TXOP_PS;
 
+	band_5g->vht_cap.vht_mcs.rx_highest = cpu_to_le16(rx_highest_data_rate);
+	band_5g->vht_cap.vht_mcs.tx_highest = cpu_to_le16(tx_highest_data_rate);
 }
 
 /**
@@ -6687,32 +6720,6 @@ out:
 }
 
 /**
- * hdd_rx_wake_lock_destroy() - Destroy RX wakelock
- * @hdd_ctx:	HDD context.
- *
- * Destroy RX wakelock.
- *
- * Return: None.
- */
-static void hdd_rx_wake_lock_destroy(hdd_context_t *hdd_ctx)
-{
-	qdf_wake_lock_destroy(&hdd_ctx->rx_wake_lock);
-}
-
-/**
- * hdd_rx_wake_lock_create() - Create RX wakelock
- * @hdd_ctx:	HDD context.
- *
- * Create RX wakelock.
- *
- * Return: None.
- */
-static void hdd_rx_wake_lock_create(hdd_context_t *hdd_ctx)
-{
-	qdf_wake_lock_create(&hdd_ctx->rx_wake_lock, "qcom_rx_wakelock");
-}
-
-/**
  * hdd_roc_context_init() - Init ROC context
  * @hdd_ctx:	HDD context.
  *
@@ -6765,8 +6772,6 @@ static int hdd_context_deinit(hdd_context_t *hdd_ctx)
 	hdd_roc_context_destroy(hdd_ctx);
 
 	hdd_sap_context_destroy(hdd_ctx);
-
-	hdd_rx_wake_lock_destroy(hdd_ctx);
 
 	hdd_tdls_context_destroy(hdd_ctx);
 
@@ -8871,8 +8876,6 @@ static int hdd_context_init(hdd_context_t *hdd_ctx)
 
 	hdd_tdls_context_init(hdd_ctx, false);
 
-	hdd_rx_wake_lock_create(hdd_ctx);
-
 	ret = hdd_sap_context_init(hdd_ctx);
 	if (ret)
 		goto scan_destroy;
@@ -8903,7 +8906,6 @@ sap_destroy:
 
 scan_destroy:
 	hdd_scan_context_destroy(hdd_ctx);
-	hdd_rx_wake_lock_destroy(hdd_ctx);
 	hdd_tdls_context_destroy(hdd_ctx);
 
 list_destroy:
@@ -9073,10 +9075,8 @@ static hdd_context_t *hdd_context_create(struct device *dev)
 	if (ret)
 		goto err_deinit_hdd_context;
 
-#ifdef WLAN_LOGGING_SOCK_SVC_ENABLE
 	wlan_logging_set_log_to_console(hdd_ctx->config->wlanLoggingToConsole);
 	wlan_logging_set_active(hdd_ctx->config->wlanLoggingEnable);
-#endif
 
 	hdd_ctx->is_ssr_in_progress = false;
 
@@ -13759,7 +13759,7 @@ void hdd_drv_ops_inactivity_handler(unsigned long arg)
 module_init(hdd_module_init);
 module_exit(hdd_module_exit);
 #else
-device_initcall(hdd_module_init);
+late_initcall(hdd_module_init);
 #endif
 
 MODULE_LICENSE("Dual BSD/GPL");
