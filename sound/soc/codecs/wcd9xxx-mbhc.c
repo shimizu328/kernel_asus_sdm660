@@ -3660,7 +3660,8 @@ static int wcd9xxx_update_rel_threshold(struct wcd9xxx_mbhc *mbhc, int ceilmv,
 	return 0;
 }
 
-#define NBTNMEAS 1
+#define NBTNMEAS 2
+
 irqreturn_t wcd9xxx_dce_handler(int irq, void *data)
 {
 	int i, mask;
@@ -4432,8 +4433,8 @@ static void wcd9xxx_mbhc_fw_read(struct work_struct *work)
 ssize_t codec_mbhc_debug_read(struct file *file, char __user *buf,
 			      size_t count, loff_t *pos)
 {
-	const int size = 768;
-	char buffer[768];
+	const int size = 770;
+	char buffer[770];
 	int n = 0;
 	struct wcd9xxx_mbhc *mbhc = file->private_data;
 	const struct mbhc_internal_cal_data *p = &mbhc->mbhc_data;

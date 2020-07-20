@@ -706,8 +706,9 @@ static ssize_t tfa98xx_dbgfs_rpc_read(struct file *file,
 	}
 
 	mutex_lock(&tfa98xx->dsp_lock);
-
-	ret = send_tfa_cal_apr(buffer, count, true);
+	/* huaqin add for ZQL1820p1-24 by xudayi at 2018/10/31 start */
+	//ret = send_tfa_cal_apr(buffer, count, true);
+	/* huaqin add for ZQL1820p1-24 by xudayi at 2018/10/31 end */
 
 	mutex_unlock(&tfa98xx->dsp_lock);
 	if (ret) {
@@ -792,7 +793,10 @@ static ssize_t tfa98xx_dbgfs_rpc_send(struct file *file,
 
 	mutex_lock(&tfa98xx->dsp_lock);
 
-	err = send_tfa_cal_apr(buffer, count, false);
+	/* huaqin add for ZQL1820p1-24 by xudayi at 2018/10/31 start */
+	//err = send_tfa_cal_apr(buffer, count, false);
+	/* huaqin add for ZQL1820p1-24 by xudayi at 2018/10/31 end */
+
 	if (err) {
 		pr_err("[0x%x] dsp_msg error: %d\n", i2c->addr, err);
 	}

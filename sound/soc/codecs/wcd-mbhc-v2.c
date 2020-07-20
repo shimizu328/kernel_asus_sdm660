@@ -31,6 +31,13 @@
 #include "wcd-mbhc-v2.h"
 #include "wcdcal-hwdep.h"
 
+#if 0
+#undef dev_dbg
+#define dev_dbg dev_info
+#undef pr_debug
+#define pr_debug pr_info
+#endif
+
 #define WCD_MBHC_JACK_MASK (SND_JACK_HEADSET | SND_JACK_OC_HPHL | \
 			   SND_JACK_OC_HPHR | SND_JACK_LINEOUT | \
 			   SND_JACK_MECHANICAL | SND_JACK_MICROPHONE2 | \
@@ -55,14 +62,6 @@
 #define ANC_DETECT_RETRY_CNT 7
 #define WCD_MBHC_SPL_HS_CNT  1
 
-#ifdef CONFIG_AINUR_DTS_HW
-int g_jack_det_invert = 0;
-extern int g_DebugMode;
-
-uint32_t g_ZL = 0;
-uint32_t g_ZR = 0;
-#endif
-
 static int det_extn_cable_en;
 module_param(det_extn_cable_en, int,
 		S_IRUGO | S_IWUSR | S_IWGRP);
@@ -75,21 +74,26 @@ enum wcd_mbhc_cs_mb_en_flag {
 	WCD_MBHC_EN_NONE,
 };
 
-#ifdef CONFIG_MACH_ASUS_X00T
+/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 start */
 static int hph_state = 0;
+/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 end */
+
+/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 start */
 static bool wcd_swch_level_remove(struct wcd_mbhc *mbhc);
-#endif
+/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 end */
 
 static void wcd_mbhc_jack_report(struct wcd_mbhc *mbhc,
 				struct snd_soc_jack *jack, int status, int mask)
 {
-#ifdef CONFIG_MACH_ASUS_X00T
-	pr_err("%s:%x,%x",__func__,status,mask);
+	/* Huaqin add for check headset event by xudayi at 2018/03/10 start */
+	pr_debug("%s:%x,%x",__func__,status,mask);
+	/* Huaqin add for check headset event by xudayi at 2018/03/10 end */
+	/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 start */
 	if((status == 0x9 && mask == 0x3cf) || (status == 0xb && mask == 0x3cf))
 		hph_state = 1;
 	else
 		hph_state = 0;
-#endif
+	/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 end */
 	snd_soc_jack_report(jack, status, mask);
 }
 
@@ -377,10 +381,9 @@ out_micb_en:
 		if (micbias2)
 			/* Disable cs, pullup & enable micbias */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
-		else
-#ifdef CONFIG_MACH_ASUS_X00T
-		     if(!wcd_swch_level_remove(mbhc))
-#endif
+		/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 start */
+		else if(!wcd_swch_level_remove(mbhc))
+		/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 end */
 			/* Disable micbias, pullup & enable cs */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
 		mutex_unlock(&mbhc->hphl_pa_lock);
@@ -398,10 +401,9 @@ out_micb_en:
 		if (micbias2)
 			/* Disable cs, pullup & enable micbias */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
-		else
-#ifdef CONFIG_MACH_ASUS_X00T
-		     if(!wcd_swch_level_remove(mbhc))
-#endif
+		/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 start */
+		else if(!wcd_swch_level_remove(mbhc))
+		/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 end */
 			/* Disable micbias, pullup & enable cs */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
 		mutex_unlock(&mbhc->hphr_pa_lock);
@@ -413,10 +415,9 @@ out_micb_en:
 		if (micbias2)
 			/* Disable cs, pullup & enable micbias */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
-		else
-#ifdef CONFIG_MACH_ASUS_X00T
-		     if(!wcd_swch_level_remove(mbhc))
-#endif
+		/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 start */
+		else if(!wcd_swch_level_remove(mbhc))
+		/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 end */
 			/* Disable micbias, enable pullup & cs */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		break;
@@ -426,10 +427,9 @@ out_micb_en:
 		if (micbias2)
 			/* Disable cs, pullup & enable micbias */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
-		else
-#ifdef CONFIG_MACH_ASUS_X00T
-		     if(!wcd_swch_level_remove(mbhc))
-#endif
+		/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 start */
+		else if(!wcd_swch_level_remove(mbhc))
+		/* Huaqin add for solve headphone can not recognize by xudayi at 2018/02/12 end */
 			/* Disable micbias, enable pullup & cs */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_PULLUP);
 		break;
@@ -772,12 +772,6 @@ static void wcd_mbhc_report_plug(struct wcd_mbhc *mbhc, int insertion,
 			(!is_pa_on)) {
 				mbhc->mbhc_cb->compute_impedance(mbhc,
 						&mbhc->zl, &mbhc->zr);
-#ifdef CONFIG_AINUR_DTS_HW
-			g_ZL = mbhc->zl;
-			g_ZR = mbhc->zr;
-			printk("wcd_mbhc_v2 : print hs_imp_val : LL = %d , RR = %d\n",g_ZL, g_ZR);
-#endif
-
 			if ((mbhc->zl > mbhc->mbhc_cfg->linein_th &&
 				mbhc->zl < MAX_IMPED) &&
 				(mbhc->zr > mbhc->mbhc_cfg->linein_th &&
@@ -925,11 +919,9 @@ static void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,
 						SND_JACK_HEADPHONE);
 			if (mbhc->current_plug == MBHC_PLUG_TYPE_HEADSET)
 				wcd_mbhc_report_plug(mbhc, 0, SND_JACK_HEADSET);
-#ifdef CONFIG_MACH_ASUS_X00T
+		/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
 		wcd_mbhc_report_plug(mbhc, 1, SND_JACK_HEADSET);
-#else
-		wcd_mbhc_report_plug(mbhc, 1, SND_JACK_UNSUPPORTED);
-#endif
+		/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
 	} else if (plug_type == MBHC_PLUG_TYPE_HEADSET) {
 		if (mbhc->mbhc_cfg->enable_anc_mic_detect)
 			anc_mic_found = wcd_mbhc_detect_anc_plug_type(mbhc);
@@ -1178,11 +1170,9 @@ static void wcd_enable_mbhc_supply(struct wcd_mbhc *mbhc,
 		} else if (plug_type == MBHC_PLUG_TYPE_HEADPHONE) {
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_CS);
 		} else {
-#ifdef CONFIG_MACH_ASUS_X00T
+			/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 start */
 			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_MB);
-#else
-			wcd_enable_curr_micbias(mbhc, WCD_MBHC_EN_NONE);
-#endif
+			/* Huaqin add for ZQL1650-155 by xudayi at 2018/02/02 end */
 		}
 	}
 }
@@ -1613,11 +1603,6 @@ static void wcd_mbhc_detect_plug_type(struct wcd_mbhc *mbhc)
 	pr_debug("%s: leave\n", __func__);
 }
 
-#ifdef CONFIG_MACH_ASUS_X00T
-int hph_ext_en_gpio = -1;
-int hph_ext_sw_gpio = -1;
-#endif
-
 static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 {
 	bool detection_type = 0;
@@ -1636,24 +1621,6 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 
 	WCD_MBHC_REG_READ(WCD_MBHC_MECH_DETECTION_TYPE, detection_type);
 
-#ifdef CONFIG_MACH_ASUS_X00T
-	#if 0
-	pr_err("%s: %s external headphone switch\n", __func__,detection_type ? "Enable" : "Disable");
-
-	if (!gpio_is_valid(hph_ext_en_gpio) || !gpio_is_valid(hph_ext_sw_gpio)) {
-		pr_err("%s: Invalid gpio: %d,%d\n", __func__,hph_ext_en_gpio,hph_ext_sw_gpio);
-	}
-
-	if (detection_type) {
-		gpio_direction_output(hph_ext_en_gpio, 1);
-		gpio_direction_output(hph_ext_sw_gpio, 1);
-	} else {
-		gpio_direction_output(hph_ext_sw_gpio, 0);
-		gpio_direction_output(hph_ext_en_gpio, 0);
-	}
-	#endif
-#endif
-
 	/* Set the detection type appropriately */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MECH_DETECTION_TYPE,
 				 !detection_type);
@@ -1661,11 +1628,6 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 	pr_debug("%s: mbhc->current_plug: %d detection_type: %d\n", __func__,
 			mbhc->current_plug, detection_type);
 	wcd_cancel_hs_detect_plug(mbhc, &mbhc->correct_plug_swch);
-
-#ifdef CONFIG_AINUR_DTS_HW
-	if (g_DebugMode)
-		goto exit;
-#endif
 
 	if (mbhc->mbhc_cb->micbias_enable_status)
 		micbias1 = mbhc->mbhc_cb->micbias_enable_status(mbhc,
@@ -1768,9 +1730,7 @@ static void wcd_mbhc_swch_irq_handler(struct wcd_mbhc *mbhc)
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_FSM_EN, 0);
 		WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_BTN_ISRC_CTL, 0);
 	}
-#ifdef CONFIG_AINUR_DTS_HW
-exit:
-#endif
+
 	mbhc->in_swch_irq_handler = false;
 	WCD_MBHC_RSC_UNLOCK(mbhc);
 	pr_debug("%s: leave\n", __func__);
@@ -1793,51 +1753,6 @@ static irqreturn_t wcd_mbhc_mech_plug_detect_irq(int irq, void *data)
 	pr_debug("%s: leave %d\n", __func__, r);
 	return r;
 }
-
-#ifdef CONFIG_AINUR_DTS_HW
-void wcd_mbhc_plug_detect_for_debug_mode(struct wcd_mbhc *mbhc, int debug_mode)
-{
-	if (debug_mode) {
-		if (mbhc->current_plug != MBHC_PLUG_TYPE_NONE) {
-			printk("%s: current_plug != MBHC_PLUG_TYPE_NONE, force removal\n", __func__);
-			mbhc->mbhc_cb->lock_sleep(mbhc, true);
-			wcd_mbhc_swch_irq_handler(mbhc);
-			mbhc->mbhc_cb->lock_sleep(mbhc, false);
-			g_jack_det_invert = 1;
-		}
-		mbhc->mbhc_cb->irq_control(mbhc->codec, mbhc->intr_ids->mbhc_btn_press_intr, false);
-		mbhc->mbhc_cb->irq_control(mbhc->codec, mbhc->intr_ids->mbhc_btn_release_intr, false);
-		mbhc->mbhc_cb->irq_control(mbhc->codec, mbhc->intr_ids->hph_left_ocp, false);
-		mbhc->mbhc_cb->irq_control(mbhc->codec, mbhc->intr_ids->hph_right_ocp, false);
-	} else {
-		bool detection_type;
-		mbhc->mbhc_cb->irq_control(mbhc->codec, mbhc->intr_ids->mbhc_btn_press_intr, true);
-		mbhc->mbhc_cb->irq_control(mbhc->codec, mbhc->intr_ids->mbhc_btn_release_intr, true);
-		mbhc->mbhc_cb->irq_control(mbhc->codec, mbhc->intr_ids->hph_left_ocp, true);
-		mbhc->mbhc_cb->irq_control(mbhc->codec, mbhc->intr_ids->hph_right_ocp, true);
-		WCD_MBHC_REG_READ(WCD_MBHC_MECH_DETECTION_TYPE, detection_type);
-		if (!g_jack_det_invert && !detection_type) {
-			printk("%s: g_jack_det_invert == 0, detect plug type\n", __func__);
-			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MECH_DETECTION_TYPE,
-					!detection_type);
-			mbhc->mbhc_cb->lock_sleep(mbhc, true);
-			wcd_mbhc_swch_irq_handler(mbhc);
-			mbhc->mbhc_cb->lock_sleep(mbhc, false);
-		} else if (g_jack_det_invert && !detection_type) {
-			printk("%s: current_plug == MBHC_PLUG_TYPE_NONE\n", __func__);
-			WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MECH_DETECTION_TYPE,
-					!detection_type);
-		} else if (g_jack_det_invert && detection_type) {
-			printk("%s: g_jack_det_invert == 1, detect plug type\n", __func__);
-			mbhc->mbhc_cb->lock_sleep(mbhc, true);
-			wcd_mbhc_swch_irq_handler(mbhc);
-			mbhc->mbhc_cb->lock_sleep(mbhc, false);
-		}
-		g_jack_det_invert = 0;
-	}
-}
-EXPORT_SYMBOL(wcd_mbhc_plug_detect_for_debug_mode);
-#endif
 
 static int wcd_mbhc_get_button_mask(struct wcd_mbhc *mbhc)
 {
@@ -2889,7 +2804,7 @@ void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 }
 EXPORT_SYMBOL(wcd_mbhc_stop);
 
-#ifdef CONFIG_MACH_ASUS_X00T
+/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 start */
 static ssize_t show_hp_state(struct device *dev,struct device_attribute *attr, char *buf)
 {
 	int ret = 0;
@@ -2899,7 +2814,7 @@ static ssize_t show_hp_state(struct device *dev,struct device_attribute *attr, c
 }
 
 static DEVICE_ATTR(hp_state, S_IRUGO, show_hp_state,NULL);
-#endif
+/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 end */
 
 /*
  * wcd_mbhc_init : initialize MBHC internal structures.
@@ -2913,9 +2828,9 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 		      bool impedance_det_en)
 {
 	int ret = 0;
-#ifdef CONFIG_MACH_ASUS_X00T
+	/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 start */
 	int ret_hp =0;
-#endif
+	/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 end */
 	int hph_swh = 0;
 	int gnd_swh = 0;
 	u32 hph_moist_config[3];
@@ -3116,9 +3031,11 @@ int wcd_mbhc_init(struct wcd_mbhc *mbhc, struct snd_soc_codec *codec,
 		       mbhc->intr_ids->hph_right_ocp);
 		goto err_hphr_ocp_irq;
 	}
-#ifdef CONFIG_MACH_ASUS_X00T
+
+	/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 start */
 	ret_hp = sysfs_create_file(&card->dev->kobj,&dev_attr_hp_state.attr);
-#endif
+	/* Huaqin add for ZQL1650-1562 by xudayi at 2018/06/20 end */
+
 	pr_debug("%s: leave ret %d\n", __func__, ret);
 	return ret;
 

@@ -1514,7 +1514,7 @@ static int wcd_cpe_get_cal_index(int32_t cal_type)
 		cal_index = WCD_CPE_LSM_CAL_AFE;
 	else if (cal_type == ULP_LSM_CAL_TYPE)
 		cal_index = WCD_CPE_LSM_CAL_LSM;
-	else if (cal_type == LSM_TOPOLOGY_CAL_TYPE)
+	else if (cal_type == ULP_LSM_TOPOLOGY_ID_CAL_TYPE)
 		cal_index = WCD_CPE_LSM_CAL_TOPOLOGY_ID;
 	else
 		pr_err("%s: invalid cal_type %d\n",
@@ -1601,7 +1601,7 @@ static int wcd_cpe_cal_init(struct wcd_cpe_core *core)
 		  wcd_cpe_set_cal, NULL, NULL} },
 		 {NULL, NULL, cal_utils_match_buf_num} },
 
-		{{LSM_TOPOLOGY_CAL_TYPE,
+		{{ULP_LSM_TOPOLOGY_ID_CAL_TYPE,
 		 {wcd_cpe_alloc_cal, wcd_cpe_dealloc_cal, NULL,
 		  wcd_cpe_set_cal, NULL, NULL} },
 		 {NULL, NULL, cal_utils_match_buf_num} },
@@ -1987,8 +1987,8 @@ struct wcd_cpe_core *wcd_cpe_init(const char *img_fname,
 	}
 
 	card = codec->component.card->snd_card;
-	snprintf(proc_name, sizeof(proc_name), "%s%d%s", cpe_name, id,
-		 state_name);
+	snprintf(proc_name, (sizeof("cpe") + sizeof("_state") +
+		 sizeof(id) - 2), "%s%d%s", cpe_name, id, state_name);
 	entry = snd_info_create_card_entry(card, proc_name,
 					   card->proc_root);
 	if (entry) {

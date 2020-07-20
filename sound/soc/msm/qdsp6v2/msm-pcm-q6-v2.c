@@ -227,7 +227,7 @@ static void event_handler(uint32_t opcode,
 				atomic_inc(&prtd->in_count);
 			}
 			if (atomic_read(&prtd->in_count) == prtd->periods) {
-				pr_debug("%s: reclaimed all bufs\n", __func__);
+				pr_info("%s: reclaimed all bufs\n", __func__);
 				if (atomic_read(&prtd->start))
 					snd_pcm_period_elapsed(substream);
 				wake_up(&the_locks.read_wait);
@@ -763,11 +763,6 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	prtd->reset_event = false;
 	runtime->private_data = prtd;
 	msm_adsp_init_mixer_ctl_pp_event_queue(soc_prtd);
-	/* Vote to update the Rx thread priority to RT Thread for playback */
-	if ((substream->stream == SNDRV_PCM_STREAM_PLAYBACK) &&
-	    (pdata->perf_mode == LOW_LATENCY_PCM_MODE))
-		apr_start_rx_rt(prtd->audio_client->apr);
-
 	/* Vote to update the Rx thread priority to RT Thread for playback */
 	if ((substream->stream == SNDRV_PCM_STREAM_PLAYBACK) &&
 	    (pdata->perf_mode == LOW_LATENCY_PCM_MODE))
