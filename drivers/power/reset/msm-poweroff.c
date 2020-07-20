@@ -294,10 +294,6 @@ static void msm_restart_prepare(const char *cmd)
 				(cmd != NULL && cmd[0] != '\0'));
 	}
 
-#ifdef CONFIG_QCOM_PRESERVE_MEM
-	need_warm_reset = true;
-#endif
-
 	/* Hard reset the PMIC unless memory contents must be maintained. */
 	if (need_warm_reset) {
 		qpnp_pon_system_pwr_off(PON_POWER_OFF_WARM_RESET);
@@ -318,12 +314,10 @@ static void msm_restart_prepare(const char *cmd)
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_RTC);
 			__raw_writel(0x77665503, restart_reason);
-#if 0
 		} else if (!strcmp(cmd, "dm-verity device corrupted")) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_DMVERITY_CORRUPTED);
 			__raw_writel(0x77665508, restart_reason);
-#endif
 		} else if (!strcmp(cmd, "dm-verity enforcing")) {
 			qpnp_pon_set_restart_reason(
 				PON_RESTART_REASON_DMVERITY_ENFORCE);
@@ -337,7 +331,6 @@ static void msm_restart_prepare(const char *cmd)
 			unsigned long reset_reason;
 			int ret;
 			ret = kstrtoul(cmd + 4, 16, &code);
-
 			if (!ret) {
 				/* Bit-2 to bit-7 of SOFT_RB_SPARE for hard
 				 * reset reason:
@@ -350,15 +343,7 @@ static void msm_restart_prepare(const char *cmd)
 				   reset_reason < PON_RESTART_REASON_OEM_MIN) {
 					pr_err("Invalid oem reset reason: %lx\n",
 						reset_reason);
-				} 
-#ifdef CONFIG_MACH_ASUS_X00T
-				/*  common reset reason is 8  */
-				else if (code == 8) {
-					qpnp_pon_set_restart_reason(
-						PON_RESTART_REASON_ASUS_UNLOCK);
-				}
-#endif
-				else {
+				} else {
 					qpnp_pon_set_restart_reason(
 						reset_reason);
 				}
