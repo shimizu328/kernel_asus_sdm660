@@ -1,4 +1,3 @@
-
 #include <dt-bindings/gpio/gpio.h>
 
 &msmgpio {

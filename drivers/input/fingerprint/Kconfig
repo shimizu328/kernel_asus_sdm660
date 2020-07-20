@@ -24,11 +24,13 @@ config CDFINGER_FP
 		Say Y here if you use common fp.
 		If unsure, say N.
 
+# Huaqin add for ZQL1650-143 by wangxiang at 2018/02/09 start
 config GOODIX_FP
     bool "Fingerprint goodix"
 	help
 		Say Y here if you use common fp.
 		If unsure, say N.
 
+# Huaqin add for ZQL1650-143 by wangxiang at 2018/02/09 end
 
 endif

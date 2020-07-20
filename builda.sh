@@ -39,7 +39,7 @@ make \
     ${DEVICE}_defconfig
     
 make \
-    -j$(nproc) \
+    -j$(nproc --all) \
     O=out \
     ARCH=arm64 \
     SUBARCH=ARM64 \

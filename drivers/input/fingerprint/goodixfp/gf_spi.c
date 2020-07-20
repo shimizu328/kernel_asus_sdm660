@@ -40,7 +40,7 @@
 #include <linux/fb.h>
 #include <linux/pm_qos.h>
 #include <linux/cpufreq.h>
-// #include <linux/wakelock.h>
+#include <linux/wakelock.h>
 #include "gf_spi.h"
 
 #include "../common/fingerprint_common.h"
@@ -61,7 +61,7 @@
 #define GF_SPIDEV_NAME     "goodix,fingerprint"
 /*device name after register in charater*/
 #define GF_DEV_NAME            "goodix_fp"
-#define	GF_INPUT_NAME	    "gxfp_input"
+#define	GF_INPUT_NAME	    "qwerty"	/*"goodix_fp" */
 
 #define	CHRD_DRIVER_NAME	"goodix_fp_spi"
 #define	CLASS_NAME		    "goodix_fp"
@@ -72,7 +72,7 @@ static int SPIDEV_MAJOR;
 static DECLARE_BITMAP(minors, N_SPI_MINORS);
 static LIST_HEAD(device_list);
 static DEFINE_MUTEX(device_list_lock);
-static struct wakeup_source fp_wakelock;
+static struct wake_lock fp_wakelock;
 static struct gf_dev gf;
 
 struct gf_key_map maps[] = {
@@ -493,7 +493,7 @@ static irqreturn_t gf_irq(int irq, void *handle)
 {
 #if defined(GF_NETLINK_ENABLE)
 	char temp = GF_NET_EVENT_IRQ;
-	__pm_wakeup_event(&fp_wakelock, WAKELOCK_HOLD_TIME);
+	wake_lock_timeout(&fp_wakelock, msecs_to_jiffies(WAKELOCK_HOLD_TIME));
 	sendnlmsg(&temp);
 #elif defined (GF_FASYNC)
 	struct gf_dev *gf_dev = &gf;
@@ -537,13 +537,12 @@ static int gf_open(struct inode *inode, struct file *filp)
 				pr_err("failed to request IRQ:%d\n", status);
 				return status;
 			}
-			//	commonfp_irq_enable();
+			commonfp_irq_enable();
 			gf_dev->irq_enabled = 1;
 			commonfp_irq_disable();
-		      /*
+
 			if (gf_dev->users == 1)
-				commonfp_irq_enable();	
-		      */
+				commonfp_irq_enable();
 			gf_hw_reset(gf_dev, 3);
 			gf_dev->device_available = 1;
 		}
@@ -753,7 +752,7 @@ static int gf_probe(struct platform_device *pdev)
 #ifndef USE_COMMON_FP
 	gf_dev->irq = gf_irq_num(gf_dev);
 #endif
-	wakeup_source_init(&fp_wakelock, "fp_wakelock");
+	wake_lock_init(&fp_wakelock, WAKE_LOCK_SUSPEND, "fp_wakelock");
 
 
 	pr_info("version V%d.%d.%02d\n", VER_MAJOR, VER_MINOR, PATCH_LEVEL);
@@ -793,7 +792,7 @@ static int gf_remove(struct platform_device *pdev)
 {
 	struct gf_dev *gf_dev = &gf;
 
-	wakeup_source_trash(&fp_wakelock);
+	wake_lock_destroy(&fp_wakelock);
 	/* make sure ops on existing fds can abort cleanly */
 	if (gf_dev->irq)
 		free_irq(gf_dev->irq, gf_dev);

@@ -1719,13 +1719,11 @@ static void adreno_fault_header(struct kgsl_device *device,
 	adreno_readreg(adreno_dev, ADRENO_REG_CP_IB2_BUFSZ, &ib2sz);
 
 	if (drawobj != NULL) {
-		struct adreno_context *drawctxt =
-			ADRENO_CONTEXT(drawobj->context);
 
-//		trace_adreno_gpu_fault(drawobj->context->id,
-//			drawobj->timestamp,
-//			status, rptr, wptr, ib1base, ib1sz,
-//			ib2base, ib2sz, drawctxt->rb->id);
+		trace_adreno_gpu_fault(drawobj->context->id,
+			drawobj->timestamp,
+			status, rptr, wptr, ib1base, ib1sz,
+			ib2base, ib2sz, drawctxt->rb->id);
 
 		pr_fault(device, drawobj,
 			"gpu fault ctx %d ts %d status %8.8X rb %4.4x/%4.4x ib1 %16.16llX/%4.4x ib2 %16.16llX/%4.4x\n",

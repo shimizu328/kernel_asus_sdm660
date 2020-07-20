@@ -319,7 +319,7 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 	unsigned long meas_mbps_zone;
 	unsigned long hist_lo_tol, hyst_lo_tol;
 	struct bw_hwmon *hw = node->hw;
-	unsigned int new_bw, io_percent, og_freq;
+	unsigned int new_bw, io_percent;
 	ktime_t ts;
 	unsigned int ms = 0;
 
@@ -487,22 +487,11 @@ static unsigned long get_bw_and_set_irq(struct hwmon_node *node,
 		*ab = roundup(new_bw, node->bw_step);
 
 	*freq = (new_bw * 100) / io_percent;
-	bool display_on = is_display_on();
-	og_freq = *freq;
-
-	if (!display_on && *freq > node->screen_off_max_freq) {
-		*freq = node->screen_off_max_freq;
-	}
-
-	if (*freq == 0) {
-		*freq = og_freq;
-	}
-
-//	trace_bw_hwmon_update(dev_name(node->hw->df->dev.parent),
-//				new_bw,
-//				*freq,
-//				hw->up_wake_mbps,
-//				hw->down_wake_mbps);
+	trace_bw_hwmon_update(dev_name(node->hw->df->dev.parent),
+				new_bw,
+				*freq,
+				hw->up_wake_mbps,
+				hw->down_wake_mbps);
 	return req_mbps;
 }
 

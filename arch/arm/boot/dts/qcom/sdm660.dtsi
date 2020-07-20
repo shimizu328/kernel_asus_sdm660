@@ -34,7 +34,7 @@
 
 	chosen {
 		stdout-path = "serial0";
-		bootargs = "quiet rcupdate.rcu_expedited=1 noirqdebug cgroup.memory=nokmem,nosocket";
+		bootargs = "rcupdate.rcu_expedited=1";
 	};
 
 	psci {
@@ -307,7 +307,17 @@
 					dev = "/dev/block/platform/soc/c0c4000.sdhci/by-name/vendor";
 					type = "ext4";
 					mnt_flags = "ro,barrier=1,discard";
-					fsmgr_flags = "wait,slotselect";
+			
+					fsmgr_flags = "wait";
+					status = "ok";
+				};
+				system {
+					compatible = "android,system";
+					dev = "/dev/block/platform/soc/c0c4000.sdhci/by-name/system";
+					type = "ext4";
+					mnt_flags = "ro,barrier=1,discard";
+					fsmgr_flags = "wait";
+			
 					status = "ok";
 				};
 			};
@@ -403,8 +413,13 @@
 			linux,cma-default;
 		};
 
+		cont_splash_mem: splash_region@9d400000 {
+			reg = <0x0 0x9d400000 0x0 0x23ff000>;
+			label = "cont_splash_mem";
+		};
+
 		dfps_data_mem: dfps_data_mem@0x9f7ff000 {
-		       reg = <0 0x9f8ff000 0 0x00001000>;
+		       reg = <0 0x9f7ff000 0 0x00001000>;
 		       label = "dfps_data_mem";
 		};
 	};
@@ -609,7 +624,9 @@
 		reg = <0x17817000 0x1000>;
 		reg-names = "wdt-base";
 		interrupts = <0 3 0>, <0 4 0>;
-		qcom,bark-time = <11000>;
+		/* Huaqin modify for ZQL1650-1340 by liunianliang at 2018/05/15 start */
+		qcom,bark-time = <20000>;
+		/* Huaqin modify for ZQL1650-1340 by liunianliang at 2018/05/15 end */
 		qcom,pet-time = <10000>;
 		qcom,ipi-ping;
 		qcom,wakeup-enable;
@@ -643,7 +660,7 @@
 			compatible = "qcom,memshare-peripheral";
 			qcom,peripheral-size = <0x0>;
 			qcom,client-id = <1>;
-			qcom,allocate-on-request;
+			qcom,allocate-boot-time;
 			label = "modem";
 		};
 	};
@@ -818,7 +835,7 @@
 	qcom,msm-thermal {
 		compatible = "qcom,msm-thermal";
 		qcom,sensor-id = <1>;
-		qcom,poll-ms = <200>;
+		qcom,poll-ms = <100>;
 		qcom,therm-reset-temp = <115>;
 		qcom,core-limit-temp = <70>;
 		qcom,core-temp-hysteresis = <10>;
@@ -832,7 +849,6 @@
 		clock-names = "osm";
 		clocks = <&clock_cpu PWRCL_CLK>;
 		qcom,cxip-lm-enable = <1>;
-		qcom,disable-vdd-rstr;
 		qcom,vdd-restriction-temp = <5>;
 		qcom,vdd-restriction-temp-hysteresis = <10>;
 
@@ -867,10 +883,10 @@
 
 	qcom,bcl {
 		compatible = "qcom,bcl";
-/*		qcom,bcl-enable; */
+		qcom,bcl-enable;
 		qcom,bcl-framework-interface;
-		qcom,bcl-hotplug-list = <>;
-		qcom,bcl-soc-hotplug-list = <>;
+		qcom,bcl-hotplug-list = <&CPU6 &CPU7>;
+		qcom,bcl-soc-hotplug-list = <&CPU4 &CPU5 &CPU6 &CPU7>;
 		qcom,ibat-monitor {
 			qcom,low-threshold-uamp = <3400000>;
 			qcom,high-threshold-uamp = <4200000>;
@@ -1122,7 +1138,7 @@
 
 	cpubw: qcom,cpubw {
 		compatible = "qcom,devbw";
-		governor = "bw_hwmon";
+		governor = "performance";
 		qcom,src-dst-ports = <1 512>;
 		qcom,active-only;
 		qcom,bw-tbl =
@@ -1249,16 +1265,6 @@
 				< 2150400 3879 >,
 				< 2457600 6881 >;
 		};
-	};
-
-	devfreq_compute: qcom,devfreq-compute {
-		compatible = "qcom,arm-cpu-mon";
-		qcom,cpulist = <&CPU0 &CPU1 &CPU2 &CPU3>;
-		qcom,target-dev = <&mincpubw>;
-		qcom,core-dev-table =
-                        < 902400 762 >,
-                        < 1401600 2086 >,
-                        < 1881600 3879 >;
 	};
 
 	clock_cpu: qcom,clk-cpu-660@179c0000 {
@@ -1738,7 +1744,6 @@
 		qcom,irq-mask = <0x200>;
 		interrupts = <0 157 1>;
 		label = "lpass";
-		cpu-affinity = <1 2>;
 		qcom,qos-config = <&glink_qos_adsp>;
 		qcom,ramp-time = <0xaf>;
 	};
@@ -1771,7 +1776,6 @@
 		qcom,irq-mask = <0x1>;
 		interrupts = <0 168 1>;
 		label = "rpm";
-		cpu-affinity = <1 2>;
 	};
 
 	glink_mpss: qcom,glink-ssr-modem {
@@ -1928,7 +1932,6 @@
 		qcom,xprt-linkid = <1>;
 		qcom,xprt-version = <1>;
 		qcom,fragmented-data;
-		qcom,dynamic-wakeup-source;
 	};
 
 	qcom,ipc_router_cdsp_xprt {
@@ -2421,10 +2424,6 @@
 		"HS_RB_G1_L1", "HS_RB_G2_L1", "HS_RB_G3_L1",
 		"MAX";
 
-		pinctrl-names = "dev-reset-assert", "dev-reset-deassert";
-		pinctrl-0 = <&ufs_dev_reset_assert>;
-		pinctrl-1 = <&ufs_dev_reset_deassert>;
-
 		resets = <&clock_gcc GCC_UFS_BCR>;
 		reset-names = "core_reset";
 
@@ -2668,6 +2667,7 @@
 		pinctrl-0 = <&gpio_key_active>;
 		pinctrl-1 = <&gpio_key_suspend>;
 
+/*
 		camera_focus {
 			label = "camera_focus";
 			gpios = <&tlmm 64 0x1>;
@@ -2684,11 +2684,21 @@
 			debounce-interval = <15>;
 		};
 
+*/
 		vol_up {
 			label = "volume_up";
-			gpios = <&pm660l_gpios 7 0x1>;
+			gpios = <&tlmm 44 0x1>;
 			linux,input-type = <1>;
 			linux,code = <115>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+		};
+
+		vol_down {
+			label = "volume_down";
+			gpios = <&tlmm 43 0x1>;
+			linux,input-type = <1>;
+			linux,code = <114>;
 			gpio-key,wakeup;
 			debounce-interval = <15>;
 		};
