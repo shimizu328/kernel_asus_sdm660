@@ -28,19 +28,27 @@
 #include "smb-lib.h"
 #include "storm-watch.h"
 #include <linux/pmic-voter.h>
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 start */
 #include <linux/of_gpio.h>
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
+/* Huaqin add for ZQL1650-68 Realize jeita function by fangaijun at 2018/02/03 start */
 #include <linux/wakelock.h>
+/* Huaqin add for ZQL1650-281 by diganyun at 2018/02/08 start */
 #include <linux/uaccess.h>
 #include <linux/proc_fs.h>
 #include <asm-generic/errno-base.h>
+/* Huaqin add for ZQL1650-281 by diganyun at 2018/02/08 end */
 #define CHARGER_TAG "[BAT][CHG]"
 #define ERROR_TAG "[ERR]"
 
 #define printk(...)  printk(KERN_ERR CHARGER_TAG __VA_ARGS__)
 #define CHG_DBG(...)  printk(KERN_ERR CHARGER_TAG __VA_ARGS__)
 #define CHG_DBG_E(...)  printk(KERN_ERR CHARGER_TAG ERROR_TAG __VA_ARGS__)
+/* Huaqin add for ZQL1650-68 Realize jeita function by fangaijun at 2018/02/03 end */
+//Huaqin added by tangqingyong at 20180206 for USB alert start
 #include <linux/switch.h>
 #include <linux/qpnp/qpnp-adc.h>
+//Huaqin added by tangqingyong at 20180206 for USB alert end
 
 #define SMB2_DEFAULT_WPWR_UW	8000000
 
@@ -191,19 +199,33 @@ struct smb2 {
 	struct smb_dt_props	dt;
 	bool			bad_part;
 };
+/* Huaqin add for ZQL1650-68 Realize jeita function by fangaijun at 2018/02/03 start */
 struct smb_charger *smbchg_dev;
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 start */
 struct timespec last_jeita_time;
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 end */
 struct wake_lock asus_chg_lock;
+int BR_countrycode =1;
+/* Huaqin add for ZQL1650-68 Realize jeita function by fangaijun at 2018/02/03 end */
+/* Huaqin add for ZQL1650-26 by diganyun at 2018/02/06 start */
+bool demo_app_property_flag = 0;
+/* Huaqin add for ZQL1650-26 by diganyun at 2018/02/06 end */
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 start */
 extern void smblib_asus_monitor_start(struct smb_charger *chg, int time);
 extern bool asus_get_prop_usb_present(struct smb_charger *chg);
 extern void asus_smblib_stay_awake(struct smb_charger *chg);
 extern void asus_smblib_relax(struct smb_charger *chg);
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 end */
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 start */
 struct gpio_control *global_gpio;	//global gpio_control
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
+/* Huaqin modify for ZQL1650-647 add otg debug info by diganyun at 2018/03/16 start*/
 #ifdef HQ_BUILD_FACTORY
 static int __debug_mask = 0x10;
 #else
 static int __debug_mask;
 #endif
+/* Huaqin modify for ZQL1650-647 add otg debug info by diganyun at 2018/03/16 end*/
 module_param_named(
 	debug_mask, __debug_mask, int, S_IRUSR | S_IWUSR
 );
@@ -230,6 +252,7 @@ static int smb2_parse_dt(struct smb2 *chip)
 	struct smb_charger *chg = &chip->chg;
 	struct device_node *node = chg->dev->of_node;
 	int rc, byte_len;
+
 	if (!node) {
 		pr_err("device tree node missing\n");
 		return -EINVAL;
@@ -315,11 +338,11 @@ static int smb2_parse_dt(struct smb2 *chip)
 			return rc;
 		}
 	}
-	/* USB alert start */
+	//Huaqin added by tangqingyong at 20180206 for USB alert start
 	if(of_find_property(node,"qcom,chg-alert-vadc",NULL)){
 		dev_err(chg->dev,"get chg_alert vadc good rc = %d \n",rc);
 	}
-	/* USB alert end */
+	//Huaqin added by tangqingyong at 20180206 for USB alert end
 
 
 	of_property_read_u32(node, "qcom,float-option", &chip->dt.float_option);
@@ -973,7 +996,9 @@ static enum power_supply_property smb2_batt_props[] = {
 	POWER_SUPPLY_PROP_RERUN_AICL,
 	POWER_SUPPLY_PROP_DP_DM,
 	POWER_SUPPLY_PROP_CHARGE_COUNTER,
+/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 start */
 	POWER_SUPPLY_PROP_CHARGING_ENABLED,
+/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
 	POWER_SUPPLY_PROP_FCC_STEPPER_ENABLE,
 	POWER_SUPPLY_PROP_CHARGE_FULL,
 	POWER_SUPPLY_PROP_CYCLE_COUNT,
@@ -1000,9 +1025,11 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
 		rc = smblib_get_prop_input_suspend(chg, val);
 		break;
+/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 start */
 	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 		rc = smblib_get_prop_charging_enabled(chg, val);
 		break;
+/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
 	case POWER_SUPPLY_PROP_CHARGE_TYPE:
 		rc = smblib_get_prop_batt_charge_type(chg, val);
 		break;
@@ -1054,7 +1081,7 @@ static int smb2_batt_get_prop(struct power_supply *psy,
 					      BATT_PROFILE_VOTER);
 		break;
 	case POWER_SUPPLY_PROP_TECHNOLOGY:
-		val->intval = POWER_SUPPLY_TECHNOLOGY_LIPO;
+		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
 		break;
 	case POWER_SUPPLY_PROP_CHARGE_DONE:
 		rc = smblib_get_prop_batt_charge_done(chg, val);
@@ -1115,9 +1142,11 @@ static int smb2_batt_set_prop(struct power_supply *psy,
 	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
 		rc = smblib_set_prop_input_suspend(chg, val);
 		break;
+/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 start */
 	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 		rc = smblib_set_prop_charging_enabled(chg, val);
 		break;
+/* Huaqin add for ZQL1650-189 by diganyun at 2018/02/01 end */
 	case POWER_SUPPLY_PROP_SYSTEM_TEMP_LEVEL:
 		rc = smblib_set_prop_system_temp_level(chg, val);
 		break;
@@ -1506,7 +1535,7 @@ static int smb2_disable_typec(struct smb_charger *chg)
 	return rc;
 }
 
-/* USB alert start */
+//Huaqin added by tangqingyong at 20180206 for USB alert start
 struct switch_dev usb_alert_dev;
 void register_usb_alert(void)
 {
@@ -1521,9 +1550,9 @@ void register_usb_alert(void)
 
 
 }
-/* USB alert end */
+//Huaqin added by tangqingyong at 20180206 for USB alert end
 
-/* usb_otg start */
+//Huaqin added by tangqingyong at 20180212 for usb_otg start
 struct switch_dev usb_otg_dev;
 void register_usb_otg(void)
 {
@@ -1538,7 +1567,7 @@ void register_usb_otg(void)
 
 
 }
-/* usb_otg end */
+//Huaqin added by tangqingyong at 20180212 for usb_otg end
 static int smb2_init_hw(struct smb2 *chip)
 {
 	struct smb_charger *chg = &chip->chg;
@@ -2317,17 +2346,18 @@ static void smb2_create_debugfs(struct smb2 *chip)
 
 #endif
 
+/* Huaqin add for ZQL1650-281 by diganyun at 2018/02/08 start */
 #define ATD_CHG_LIMIT_SOC	70
 int charger_limit_enable_flag = 0;
 int charger_limit_value = 0;
 static char charger_limit[8] = "0";
-static struct proc_dir_entry *limit_enable_entry = NULL;
+static struct proc_dir_entry *limit_enbale_entry = NULL;
 static struct proc_dir_entry *limit_entry = NULL;
 extern int asus_get_prop_batt_capacity(struct smb_charger *chg);
 #define CHARGER_LIMIT_EN_PROC_FILE     "driver/charger_limit_enable"
 #define CHARGER_LIMIT_PROC_FILE     "driver/charger_limit"
 
- ssize_t charger_limit_enable_read_proc(struct file *file, char __user *page, size_t size, loff_t *ppos)
+ ssize_t charger_limit_enbale_read_proc(struct file *file, char __user *page, size_t size, loff_t *ppos)
 {
 	char read_data[8]={0};
 	int len = 0;
@@ -2348,7 +2378,7 @@ extern int asus_get_prop_batt_capacity(struct smb_charger *chg);
 	return len;
 }
 
-static ssize_t charger_limit_enable_write_proc(struct file *file, const char __user *buff, size_t size, loff_t *ppos)
+static ssize_t charger_limit_enbale_write_proc(struct file *file, const char __user *buff, size_t size, loff_t *ppos)
 {	char wtire_data[32] = {0};
 	int rc;
 	int soc;
@@ -2361,6 +2391,12 @@ static ssize_t charger_limit_enable_write_proc(struct file *file, const char __u
 		return -EFAULT;
 	if (copy_from_user( &wtire_data, buff, size ))
 		return -EFAULT;
+	#if 0
+	if (limit_chip == NULL){
+		printk("byr_: %s, limit_chip == NULL !!!\n", __func__);
+		return -EFAULT;
+	}
+	#endif
 
 	if (wtire_data[0] == '1'){
 		charger_limit_enable_flag = 1;
@@ -2371,23 +2407,23 @@ static ssize_t charger_limit_enable_write_proc(struct file *file, const char __u
 			if(online)
 				power_supply_changed(smbchg_dev->batt_psy);
 		}
-		printk("%s,  write enable 1 soc = %d, limit-value= %d! \n", __func__, soc, charger_limit_value);
+		printk("%s,  write enbale 1 soc = %d, limit-value= %d! \n", __func__, soc, charger_limit_value);
 			}
 	else{
 		charger_limit_enable_flag = 0;
 		rc = smblib_masked_write(smbchg_dev, CHARGING_ENABLE_CMD_REG, CHARGING_ENABLE_CMD_BIT, 0);
 		if(online)
 			power_supply_changed(smbchg_dev->batt_psy);
-		printk("%s, write enable 0,no limit ,charging !!  \n", __func__);
+		printk("%s, write enbale 0,no limit ,charging !!  \n", __func__);
     }
 	printk("%s, ****************  charger_limit_enable_flag = %d\n", __func__, charger_limit_enable_flag);
 
 	return size;
 }
 
-static const struct file_operations charger_limit_enable_proc_ops = {
-    .read = charger_limit_enable_read_proc,
-    .write = charger_limit_enable_write_proc,
+static const struct file_operations charger_limit_enbale_proc_ops = {
+    .read = charger_limit_enbale_read_proc,
+    .write = charger_limit_enbale_write_proc,
 };
 
  ssize_t charger_limit_read_proc(struct file *file, char __user *page, size_t size, loff_t *ppos)
@@ -2467,9 +2503,9 @@ static int init_proc_charger_limit(void)
 {
 	int ret =0 ;
 
-	limit_enable_entry = proc_create(CHARGER_LIMIT_EN_PROC_FILE, 0666, NULL, &charger_limit_enable_proc_ops);
+	limit_enbale_entry = proc_create(CHARGER_LIMIT_EN_PROC_FILE, 0666, NULL, &charger_limit_enbale_proc_ops);
 
-	if (limit_enable_entry == NULL)
+	if (limit_enbale_entry == NULL)
 	{
 		printk("create_proc entry %s failed\n", CHARGER_LIMIT_EN_PROC_FILE);
 		return -ENOMEM;
@@ -2497,14 +2533,102 @@ static int init_proc_charger_limit(void)
 
 static void remove_proc_charger_limit(void)
 {
-	proc_remove(limit_enable_entry);
+	proc_remove(limit_enbale_entry);
 	printk("remove_proc %s \n", CHARGER_LIMIT_EN_PROC_FILE);
 	proc_remove(limit_entry);
 	printk("remove_proc %s \n", CHARGER_LIMIT_EN_PROC_FILE);
 
 }
+/* Huaqin add for ZQL1650-281 by diganyun at 2018/02/08 end */
 
-/* Adapter ID start */
+/* Huaqin add for ZQL1650-26 by diganyun at 2018/02/06 start */
+static ssize_t demo_app_property_store(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t len)
+{
+	int tmp = 0;
+	tmp = buf[0] - 48;
+	CHG_DBG_E("%s: tmp = %d \n", __func__,tmp);//dgy add log
+	if (tmp == 0) {
+		demo_app_property_flag = false;
+		CHG_DBG("%s: demo_app_property_flag = 0\n", __func__);
+	} else if (tmp == 1) {
+		demo_app_property_flag = true;
+		CHG_DBG("%s: demo_app_property_flag = 1\n", __func__);
+	}
+	return len;
+}
+
+static ssize_t demo_app_property_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+       return sprintf(buf, "%d\n", demo_app_property_flag);
+}
+
+static DEVICE_ATTR(demo_app_property, 0664, demo_app_property_show, demo_app_property_store);
+
+static struct attribute *asus_smblib_attrs[] = {
+	&dev_attr_demo_app_property.attr,
+	NULL
+};
+
+static const struct attribute_group asus_smblib_attr_group = {
+	.attrs = asus_smblib_attrs,
+};
+/* Huaqin add for ZQL1650-26 by diganyun at 2018/02/06 end */
+
+/* Huaqin add for read countrycode by liunianliang at 2019/01/16 start */
+static struct proc_dir_entry *countrycode_entry = NULL;
+char countrycode[32];
+
+static ssize_t
+countrycode_proc_write(struct file *filp, const char *ubuf, size_t cnt, loff_t *data) {
+	size_t copy_size = cnt;
+	if (cnt >= sizeof(countrycode))
+		copy_size = sizeof(countrycode);
+
+	if (copy_from_user(&countrycode, ubuf, copy_size)) {
+		CHG_DBG("%s: copy_from_user fail !\n", __func__);
+		return -EFAULT;
+	}
+
+	countrycode[copy_size] = 0;
+	return copy_size;
+}
+
+static int countrycode_proc_show(struct seq_file *m, void *v) {
+	seq_printf(m, "%s\n", countrycode);
+	return 0;
+}
+
+static int countrycode_proc_open(struct inode *inode, struct file *file) {
+	return single_open(file, countrycode_proc_show, inode->i_private);
+}
+
+static const struct file_operations countrycode_proc_ops = {
+	.open = countrycode_proc_open,
+	.write = countrycode_proc_write,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};
+
+static int init_proc_countrycode(void) {
+	int ret =0 ;
+
+	countrycode_entry = proc_create("countrycode", 0666, NULL, &countrycode_proc_ops);
+
+	if (countrycode_entry == NULL) {
+		printk("create_proc entry %s failed!\n", "countrycode");
+		return -ENOMEM;
+	} else {
+		printk("create proc entry %s success\n", "countrycode");
+		ret = 0;
+	}
+
+	return ret;
+}
+/* Huaqin add for read countrycode by liunianliang at 2019/01/16 end */
+
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 start */
 int32_t get_ID_vadc_voltage(void){
 	struct qpnp_vadc_chip *vadc_dev;
 	struct qpnp_vadc_result adc_result;
@@ -2521,16 +2645,89 @@ int32_t get_ID_vadc_voltage(void){
 	}
 	return adc;
 }
-/* Adapter ID end */
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
+
+/* Huaqin modify for ZQL1650-74 Countrycode Adapter by diganyun at 2018/03/26 start */
+#define COUNTRY_CODE_PATH "/persist/flag/countrycode.txt"
+
+void read_BR_countrycode_work(struct work_struct *work)
+{
+	struct file *fp = NULL;
+	mm_segment_t old_fs;
+	loff_t pos_lsts = 0;
+	char buf[32];
+	int readlen = 0;
+	int cnt = 5;
+
+	/* Huaqin add for read countrycode by liunianliang at 2019/01/16 start */
+	if (strlen(countrycode)) {
+		CHG_DBG("%s: countrycode from proc is not null: %s!\n", __func__, countrycode);
+		strcpy(buf, countrycode);
+		goto out;
+	}
+	/* Huaqin add for read countrycode by liunianliang at 2019/01/16 end */
+
+	fp = filp_open(COUNTRY_CODE_PATH, O_RDONLY, 0);
+	if (IS_ERR_OR_NULL(fp)) {
+        printk("[BAT][CHG] OPEN (%s) failed !! \n", COUNTRY_CODE_PATH);
+		if(--cnt >=0)
+			schedule_delayed_work(&smbchg_dev->read_countrycode_work, msecs_to_jiffies(3000));
+		return ;	/*No such file or directory*/
+	}
+	/* For purpose that can use read/write system call */
+	if (fp->f_op != NULL) {
+		old_fs = get_fs();
+		set_fs(KERNEL_DS);
+		pos_lsts = 0;
+		readlen = vfs_read(fp, buf,strlen(buf), &pos_lsts);
+		if(readlen < 0) {
+			set_fs(old_fs);
+			filp_close(fp, NULL);
+			printk("[BAT][CHG] Readlen <0\n");
+			if(--cnt >=0)
+				schedule_delayed_work(&smbchg_dev->read_countrycode_work, msecs_to_jiffies(3000));
+			return ;
+		}
+		buf[readlen]='\0';
+	} else {
+		printk("[BAT][CHG] Read (%s) error\n", COUNTRY_CODE_PATH);
+		if(--cnt >=0)
+			schedule_delayed_work(&smbchg_dev->read_countrycode_work, msecs_to_jiffies(3000));
+		return;
+	}
+/* Huaqin add for read countrycode by liunianliang at 2019/01/16 start */
+out:
+/* Huaqin add for read countrycode by liunianliang at 2019/01/16 end */
+	if (strcmp(buf, "BR") == 0)
+		BR_countrycode = COUNTRY_BR;
+	else if(strcmp(buf, "IN") == 0)
+		BR_countrycode = COUNTRY_IN;
+	else
+		BR_countrycode = COUNTRY_OTHER;
+
+	printk("country code : %s, type %d\n", buf, BR_countrycode);
+	if (fp != NULL) {
+		if (fp->f_op != NULL) set_fs(old_fs);
+		filp_close(fp, NULL);
+	}
+	return ;
+}
+/* Huaqin modify for ZQL1650-74 Countrycode Adapter by diganyun at 2018/03/26 end */
 
 static int smb2_probe(struct platform_device *pdev)
 {
 	struct smb2 *chip;
 	struct smb_charger *chg;
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 start */
 	struct gpio_control *gpio_ctrl;
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
 	int rc = 0;
+/* Huaqin add for ZQL1650  solve High voltage charger  cannot charge by fangaijun at 2018/3/15 start */
 	u8 HVDVP_reg;
+/* Huaqin add for ZQL1650  solve High voltage charger  cannot charge by fangaijun at 2018/3/15 end */
+/* Huaqin modify for ZQL1650 optimize adapter id input_suspend by fangaijun at 2018/03/22 start*/
 	u8 USBIN_AICL_reg;
+/* Huaqin modify for ZQL1650 optimize adapter id input_suspend by fangaijun at 2018/03/22 end*/
 	union power_supply_propval val;
 	int usb_present, batt_present, batt_health, batt_charge_type;
 
@@ -2538,12 +2735,14 @@ static int smb2_probe(struct platform_device *pdev)
 	printk("enter smb2_probe\n");
 	if (!chip)
 		return -ENOMEM;
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 start */
 //ASUS BSP allocate GPIO control +++
 	gpio_ctrl = devm_kzalloc(&pdev->dev, sizeof(*gpio_ctrl), GFP_KERNEL);
 	printk("ADC_SW_EN=%d,ADCPWREN_PMI_GP1=%d\n",gpio_ctrl->ADC_SW_EN,gpio_ctrl->ADCPWREN_PMI_GP1);
 	if (!gpio_ctrl)
 		return -ENOMEM;
 //ASUS BSP allocate GPIO control ---
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
 	chg = &chip->chg;
 	chg->dev = &pdev->dev;
 	chg->param = v1_params;
@@ -2553,11 +2752,13 @@ static int smb2_probe(struct platform_device *pdev)
 	chg->mode = PARALLEL_MASTER;
 	chg->irq_info = smb2_irqs;
 	chg->name = "PMI";
-/* Realize jeita start */
+/* Huaqin add for ZQL1650-68 Realize jeita function by fangaijun at 2018/02/03 start */
 	wake_lock_init(&asus_chg_lock, WAKE_LOCK_SUSPEND, "asus_chg_lock");
 	smbchg_dev = chg;			//ASUS BSP add globe device struct +++
-/* Realize jeita end */
+/* Huaqin add for ZQL1650-68 Realize jeita function by fangaijun at 2018/02/03 end */
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 start */
 	global_gpio = gpio_ctrl;	//ASUS BSP add gpio control struct +++
+//ASUS BSP : Request ADC_SW_EN-gpios59, ADCPWREN_PMI_GP1-gpios34 +++
 	gpio_ctrl->ADC_SW_EN = of_get_named_gpio(pdev->dev.of_node, "ADC_SW_EN-gpios59", 0);
 	rc = gpio_request(gpio_ctrl->ADC_SW_EN, "ADC_SW_EN-gpios59");
 	if (rc)
@@ -2579,12 +2780,16 @@ static int smb2_probe(struct platform_device *pdev)
 	rc = gpio_get_value(gpio_ctrl->ADCPWREN_PMI_GP1);
 	CHG_DBG("ADCPWREN_PMI_GP1 init H/L %d\n",rc);
 //ASUS BSP : Request Request ADC_SW_EN-gpios59, ADCPWREN_PMI_GP1-gpios34 ---
-/* Adapter ID end */
+/* Huaqin modify for ZQL1650-70 Identify Adapter ID by fangaijun at 2018/02/8 end */
 	chg->regmap = dev_get_regmap(chg->dev->parent, NULL);
 	if (!chg->regmap) {
 		pr_err("parent regmap is missing\n");
 		return -EINVAL;
 	}
+/* Huaqin modify for ZQL1650-74 Countrycode Adapter by diganyun at 2018/03/26 start */
+	INIT_DELAYED_WORK(&chg->read_countrycode_work, read_BR_countrycode_work);
+	schedule_delayed_work(&chg->read_countrycode_work, msecs_to_jiffies(30000));
+/* Huaqin modify for ZQL1650-74 Countrycode Adapter by diganyun at 2018/03/26 end */
 
 	rc = smb2_chg_config_init(chip);
 	if (rc < 0) {
@@ -2693,7 +2898,20 @@ static int smb2_probe(struct platform_device *pdev)
 		goto cleanup;
 	}
 
+/* Huaqin add for ZQL1650-26 by diganyun at 2018/02/06 start */
+	rc = sysfs_create_group(&chg->dev->kobj, &asus_smblib_attr_group);
+	if (rc < 0) {
+		pr_err("create node demo_app_property failed!! rc=%d\n", rc);
+		goto cleanup;
+	}
+/* Huaqin add for ZQL1650-26 by diganyun at 2018/02/06 end */
+/* Huaqin add for ZQL1650-281 by diganyun at 2018/02/08 start */
 	init_proc_charger_limit();
+/* Huaqin add for ZQL1650-281 by diganyun at 2018/02/08 end */
+
+/* Huaqin add for read countrycode by liunianliang at 2019/01/16 start */
+	init_proc_countrycode();
+/* Huaqin add for read countrycode by liunianliang at 2019/01/16 end */
 
 	smb2_create_debugfs(chip);
 
@@ -2726,20 +2944,30 @@ static int smb2_probe(struct platform_device *pdev)
 	batt_charge_type = val.intval;
 
 	device_init_wakeup(chg->dev, true);
+/* Huaqin add for ZQL1650  solve High voltage charger  cannot charge by fangaijun at 2018/3/15 start */
 	rc = smblib_read(smbchg_dev, USBIN_OPTIONS_1_CFG_REG, &HVDVP_reg);
 	printk("enter1 smb2_probe HVDVP_reg=0x%x\n",HVDVP_reg);
 	rc = smblib_masked_write(smbchg_dev, USBIN_OPTIONS_1_CFG_REG, HVDCP_EN_BIT, 0x0);
 	rc = smblib_read(smbchg_dev, USBIN_OPTIONS_1_CFG_REG, &HVDVP_reg);
 	if (rc < 0)
 		CHG_DBG_E("%s: Failed to set USBIN_OPTIONS_1_CFG_REG\n", __func__);
+	printk("enter1 smb2_probe HVDVP_reg=0x%x\n",HVDVP_reg);
+/* Huaqin add for ZQL1650  solve High voltage charger  cannot charge by fangaijun at 2018/3/15 end */
+/* Huaqin modify for ZQL1650 optimize adapter id input_suspend by fangaijun at 2018/03/22 start*/
 	rc = smblib_read(smbchg_dev, USBIN_AICL_OPTIONS_CFG_REG, &USBIN_AICL_reg);
 	printk("enter1 smb2_probe USBIN_AICL_reg=0x%x\n",USBIN_AICL_reg);
 	rc = smblib_masked_write(smbchg_dev, USBIN_AICL_OPTIONS_CFG_REG, SUSPEND_ON_COLLAPSE_USBIN_BIT, 0x0);
 	rc = smblib_read(smbchg_dev, USBIN_AICL_OPTIONS_CFG_REG, &USBIN_AICL_reg);
 	if (rc < 0)
 		CHG_DBG_E("%s: Failed to set USBIN_OPTIONS_1_CFG_REG\n", __func__);
+	printk("enter2 smb2_probe USBIN_AICL_reg=0x%x\n",USBIN_AICL_reg);
+/* Huaqin modify for ZQL1650 optimize adapter id input_suspend by fangaijun at 2018/03/22 end*/
+//Huaqin added by tangqingyong at 20180206 for USB alert start
 	register_usb_alert();
+//Huaqin added by tangqingyong at 20180206 for USB alert end
+//Huaqin added by tangqingyong at 20180212 for usb_otg start
 	register_usb_otg();
+//Huaqin added by tangqingyong at 20180212 for usb_otg end
 	pr_info("QPNP SMB2 probed successfully usb:present=%d type=%d batt:present = %d health = %d charge = %d\n",
 		usb_present, chg->real_charger_type,
 		batt_present, batt_health, batt_charge_type);
@@ -2765,10 +2993,15 @@ cleanup:
 	smblib_deinit(chg);
 
 	platform_set_drvdata(pdev, NULL);
+/* Huaqin add for ZQL1650-26 by diganyun at 2018/02/06 start */
+	sysfs_remove_group(&chg->dev->kobj, &asus_smblib_attr_group);
+/* Huaqin add for ZQL1650-26 by diganyun at 2018/02/06 end */
+/* Huaqin add for ZQL1650-281 by diganyun at 2018/02/08 start */
 	remove_proc_charger_limit();
+/* Huaqin add for ZQL1650-281 by diganyun at 2018/02/08 end */
 	return rc;
 }
-/* sw jeita per min in suspend start */
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 start */
 #define JEITA_MINIMUM_INTERVAL (30)
 static int smb2_resume(struct device *dev)
 {
@@ -2778,13 +3011,17 @@ static int smb2_resume(struct device *dev)
 	if (!asus_get_prop_usb_present(smbchg_dev)) {
 		return 0;
 	}
+#if 0
+	if(!asus_flow_done_flag)
+		return 0;
+#endif
 	asus_smblib_stay_awake(smbchg_dev);
 	mtNow = current_kernel_time();
 
 	/*BSP Austin_Tseng: if next JEITA time less than 30s, do JEITA
 			(next JEITA time = last JEITA time + 60s)*/
 	nextJEITAinterval = 60 - (mtNow.tv_sec - last_jeita_time.tv_sec);
-	pr_debug("%s: nextJEITAinterval = %d\n", __func__, nextJEITAinterval);
+	printk("%s: nextJEITAinterval = %d\n", __func__, nextJEITAinterval);
 	if (nextJEITAinterval <= JEITA_MINIMUM_INTERVAL) {
 		smblib_asus_monitor_start(smbchg_dev, 0);
 		cancel_delayed_work(&smbchg_dev->asus_batt_RTC_work);
@@ -2794,7 +3031,7 @@ static int smb2_resume(struct device *dev)
 	}
 	return 0;
 }
-/* sw jeita per min in suspend end */
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 end */
 static int smb2_remove(struct platform_device *pdev)
 {
 	struct smb2 *chip = platform_get_drvdata(pdev);
@@ -2831,11 +3068,11 @@ static void smb2_shutdown(struct platform_device *pdev)
 	smblib_masked_write(chg, USBIN_OPTIONS_1_CFG_REG,
 				 AUTO_SRC_DETECT_BIT, AUTO_SRC_DETECT_BIT);
 }
-/* sw jeita per min in suspend start */
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 start */
 static const struct dev_pm_ops smb2_pm_ops = {
 	.resume		= smb2_resume,
 };
-/* sw jeita per min in suspend end */
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 end */
 static const struct of_device_id match_table[] = {
 	{ .compatible = "qcom,qpnp-smb2", },
 	{ },
@@ -2846,9 +3083,9 @@ static struct platform_driver smb2_driver = {
 		.name		= "qcom,qpnp-smb2",
 		.owner		= THIS_MODULE,
 		.of_match_table	= match_table,
-/* sw jeita per min in suspend start */
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 start */
 		.pm			= &smb2_pm_ops,
-/* sw jeita per min in suspend end*/
+/* Huaqin add for ZQL1650-68 systme suspend 1 min run sw jeita by fangaijun at 2018/02/06 end */
 	},
 	.probe		= smb2_probe,
 	.remove		= smb2_remove,

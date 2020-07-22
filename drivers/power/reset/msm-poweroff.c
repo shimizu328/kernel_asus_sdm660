@@ -343,15 +343,7 @@ static void msm_restart_prepare(const char *cmd)
 				   reset_reason < PON_RESTART_REASON_OEM_MIN) {
 					pr_err("Invalid oem reset reason: %lx\n",
 						reset_reason);
-				} 
-#ifdef CONFIG_MACH_ASUS_X00T
-				/*  common reset reason is 8  */
-				else if (code == 8) {
-					qpnp_pon_set_restart_reason(
-						PON_RESTART_REASON_ASUS_UNLOCK);
-				}
-#endif
-				else {
+				} else {
 					qpnp_pon_set_restart_reason(
 						reset_reason);
 				}
